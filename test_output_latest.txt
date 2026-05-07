@@ -1,0 +1,13 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Initializing RAG engine...
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|██████████| 103/103 [00:00<00:00, 6353.70it/s]
+RAG engine ready. Database has 1 chunks.
+
+Running test query...
+Question: What version of WSO2 API Manager is CustomerX running?
+Answer: CustomerX is running **WSO2 API Manager version 4.2.1**.
+
+*   **Known Issue:** SRE-1042 (Throttling policy sync delay under high load).
+*   **Workaround:** Restart the gateway pod; escalate to Team Lead if the issue persists.
+*   **Source:** [Source 1: data/markdown/customerX_architecture.md | Customer: CustomerX]
+Sources: ['data/markdown/customerX_architecture.md']
