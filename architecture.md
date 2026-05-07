@@ -1,82 +1,113 @@
-# Ops-Copilot: Detailed System Architecture
+# Ops-Copilot: Deep-Dive Architecture & Code Review
 
-This document provides a comprehensive explanation of the Ops-Copilot Gemini RAG (Retrieval-Augmented Generation) system, detailing each component, the data flow, and the database structure.
-
-## 1. High-Level Architecture
-
-The system is built on a modular RAG architecture designed for SRE (Site Reliability Engineering) teams. It consists of four main layers:
-
-1.  **Ingestion Layer**: Pulls data from multi-sources (Local, Confluence, GitHub).
-2.  **Storage Layer**: Vector database (ChromaDB) storing embedded text chunks.
-3.  **RAG Query Engine**: Processes questions, retrieves context, and generates answers using Gemini.
-4.  **Evaluation Layer**: Measures the quality of answers using RAGAS metrics.
+This document provides a line-by-line and block-by-block technical review of the Ops-Copilot system. It explains the "why" and "how" behind every major code segment.
 
 ---
 
-## 2. Ingestion Pipeline (`ingest.py`)
+## 1. Document Ingestion Pipeline (`ingest.py`)
 
-The ingestion pipeline is responsible for turning raw documents into searchable vectors.
+The ingestion pipeline is the foundation of the RAG system. It transforms unstructured data into searchable mathematical vectors.
 
-### Code Breakdown:
-- **`load_markdown_documents()` / `load_pdf_documents()`**: Uses LangChain loaders to walk through local directories and extract text.
-- **`load_confluence_documents()`**: Uses `ConfluenceLoader` to call the Atlassian API and download pages from specific spaces.
-- **`load_github_documents()`**: Uses `GitLoader` to clone or read a local repository and extract documentation.
-- **`add_customer_metadata()`**: A critical step that adds a `customer` tag to each document.
-    - *Example*: If a file is named `customerX_runbook.md`, it adds `metadata['customer'] = 'CustomerX'`.
-- **`split_documents()`**: Breaks long documents into smaller chunks (e.g., 1000 characters) with overlap (200 characters).
-- **`store_in_chromadb()`**: Converts text to vectors using the `all-MiniLM-L6-v2` model and saves them.
+### 1.1 Multi-Source Loading
+```python
+from langchain_community.document_loaders import (
+    DirectoryLoader, TextLoader, PyPDFLoader, ConfluenceLoader, GitLoader
+)
+```
+*   **Code Review**: We use a modular loading strategy. Instead of writing custom scrapers, we leverage LangChain's community loaders.
+*   **Example**: `ConfluenceLoader` handles OAuth/API token handshakes and converts HTML pages into plain text automatically, preserving page titles in metadata.
 
-### Data Example (What is stored in ChromaDB?):
-For each chunk, ChromaDB stores:
-- **ID**: `customerX_runbook_chunk_5`
-- **Vector**: `[0.12, -0.45, 0.78, ...]` (384-dimensional array)
-- **Document (Text)**: `"The WSO2 API Manager version for CustomerX is 4.2.1. It runs on AKS."`
-- **Metadata**: `{"customer": "CustomerX", "doc_type": "markdown", "source": "data/markdown/customerX_runbook.md"}`
+### 1.2 Recursive Character Splitting
+```python
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=1000,
+    chunk_overlap=200,
+    length_function=len,
+)
+```
+*   **Why this logic?**: Simple splitting (every 1000 chars) often cuts sentences in half.
+*   **Recursive Logic**: This splitter first tries to split by paragraphs (`\n\n`). If a paragraph is too big, it tries single newlines (`\n`). If still too big, it tries spaces. This ensures that **semantic context (sentences and paragraphs) stays together** as much as possible.
+*   **Overlap (200)**: This creates a "sliding window." If a version number like `4.2.1` is at character 995, it will appear at the end of Chunk 1 AND the beginning of Chunk 2.
+
+### 1.3 Vectorization & ChromaDB Storage
+```python
+embeddings = embedder.encode(texts, show_progress_bar=True).tolist()
+collection.upsert(ids=ids, documents=texts, embeddings=embeddings, metadatas=metadatas)
+```
+*   **Code Review**: We use `upsert` (Update + Insert). If you run the ingestion twice on the same file, it won't create duplicates; it will simply update the existing vectors.
+*   **Database Example**:
+    | ID | Vector (float32[384]) | Metadata | Content |
+    | :--- | :--- | :--- | :--- |
+    | `cusX_01` | `[0.1, -0.2, ...]` | `{"customer": "CustomerX"}` | "API Manager v4.2.1 installed on..." |
 
 ---
 
-## 3. RAG Query Engine (`rag.py`)
+## 2. RAG Query Engine (`rag.py`)
 
-This is the "brain" of the application that interacts with the user.
+This module handles the "Search" and "Reasoning" phases.
 
-### Code Breakdown:
-- **`ask(question, customer_scope)`**:
-    1.  **Vectorization**: Converts the user's question into a vector using the *same* model used during ingestion.
-    2.  **Filtered Retrieval**: Queries ChromaDB with a `where` filter.
-        - *Example Filter*: `{'customer': {'$in': ['CustomerX', 'General']}}`
-        - *Benefit*: Ensures Bob can't see Customer Y's secrets.
-    3.  **Context Construction**: Combines the top 5 most relevant chunks into a single "Context Block".
-    4.  **Gemini Prompting**: Sends the context and question to Gemini Flash.
-- **`get_authorized_customers(username)`**: A security helper that maps a user's ID to the customer documents they are allowed to see.
+### 2.1 Filtered Retrieval (The Security Layer)
+```python
+if customer_scope:
+    where_filter = {'customer': {'$in': customer_scope}}
+results = collection.query(
+    query_embeddings=[question_embedding],
+    n_results=TOP_K_RESULTS,
+    where=where_filter
+)
+```
+*   **Code Review**: This is where **Multi-Tenancy** is enforced. 
+*   **Detail**: Even if a document for "CustomerY" is mathematically the most similar to a query, ChromaDB will **ignore it** if `customer_scope` only contains `['CustomerX']`. This prevents data leakage between customer environments.
+
+### 2.2 System Prompting (The "SRE Persona")
+```python
+system_prompt = '''You are an SRE assistant... 
+RULES: 1. Answer ONLY from context. 2. If not in context, say so clearly...'''
+```
+*   **Why?**: LLMs like Gemini are prone to "hallucination" (making things up). By strictly defining these rules, we force the AI to act as a grounded interface to our documentation rather than a creative writer.
+
+---
+
+## 3. User Interface Logic (`app.py`)
+
+The Streamlit app provides the front-end experience.
+
+### 3.1 Session State Management
+```python
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
+```
+*   **Why?**: Streamlit is "stateless." Every time you click a button, the entire Python script runs from line 1 to the end. `session_state` is a special dictionary that persists data between these runs, allowing us to keep a chat history.
+
+### 3.2 Dynamic Source Citations
+```python
+with st.expander(f'View {len(sources)} source(s)'):
+    for src in sources:
+        col3.text(f"{src['similarity']:.0%} match")
+```
+*   **Code Review**: We show a "similarity" percentage. This is calculated as `1 - distance`. A 95% match means the user's question and the documentation chunk are mathematically very close in meaning.
 
 ---
 
 ## 4. Evaluation Framework (`evaluate.py`)
 
-This script ensures the AI is actually giving good advice.
-
-### Code Breakdown:
-- **RAGAS Integration**: Uses the RAGAS library but swaps out the default OpenAI components for Gemini.
-- **`faithfulness` Metric**: Checks if the AI's answer is supported *only* by the retrieved context (prevents hallucinations).
-- **`answer_relevancy` Metric**: Checks if the answer actually addresses the user's question.
-- **Gemini Evaluator**: Uses `ChatGoogleGenerativeAI` and `GoogleGenerativeAIEmbeddings` to run these checks without needing an OpenAI key.
-
----
-
-## 5. Security & Access Control
-
-The system implements **Metadata-Level Authorization**:
-1.  Every document is tagged with a `customer` name during ingestion.
-2.  Every user is mapped to a list of allowed `customers`.
-3.  Every search query is restricted by ChromaDB's `where` clause to only show authorized chunks.
+### 4.1 Gemini-to-Gemini Evaluation
+```python
+eval_llm = ChatGoogleGenerativeAI(model=LLM_MODEL, ...)
+results = evaluate(dataset=dataset, metrics=[faithfulness, answer_relevancy], llm=eval_llm)
+```
+*   **The Logic**: We use one instance of Gemini to answer the question, and a *separate* instance of Gemini (the "Judge") to grade the answer.
+*   **Metrics Explained**:
+    - **Faithfulness**: The Judge checks every claim in the answer against the retrieved chunks. If the AI says "Version 5" but the docs say "Version 4," the faithfulness score drops.
+    - **Answer Relevancy**: Measures if the answer actually helps the user or just repeats the question.
 
 ---
 
-## 6. Troubleshooting: Rate Limits (429 Errors)
+## 5. Summary of Data Flow
 
-If you see a `429 RESOURCE_EXHAUSTED` error:
-- **Cause**: The Gemini Free Tier has a limit of **20 requests per minute** for `gemini-3-flash`.
-- **Solution**: 
-    1.  Wait 30-60 seconds and retry.
-    2.  The `evaluate.py` script now has a `time.sleep(2)` to slow down requests.
-    3.  Reduce the number of `EVAL_QUESTIONS` if you are hitting daily project limits.
+1.  **Raw File** (`.md`) → **Ingest** → **Text Chunks**.
+2.  **Text Chunks** → **Embedding Model** → **Numerical Vectors**.
+3.  **Numerical Vectors** → **ChromaDB** (Stored with Metadata).
+4.  **User Question** → **Embedding Model** → **Search Vector**.
+5.  **Search Vector** → **ChromaDB (Filtered by Customer)** → **Relevant Chunks**.
+6.  **Relevant Chunks + Question** → **Gemini** → **Technical Answer**.
