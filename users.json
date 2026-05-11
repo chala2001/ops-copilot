@@ -1,0 +1,42 @@
+{
+    "users": {
+        "alice": {
+            "password_hash": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
+            "display_name": "Alice (Senior SRE)",
+            "customers": [
+                "CustomerX",
+                "CustomerY",
+                "General"
+            ],
+            "role": "senior"
+        },
+        "bob": {
+            "password_hash": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
+            "display_name": "Bob (SRE)",
+            "customers": [
+                "CustomerX",
+                "General"
+            ],
+            "role": "engineer"
+        },
+        "carol": {
+            "password_hash": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
+            "display_name": "Carol (SRE)",
+            "customers": [
+                "CustomerY",
+                "General"
+            ],
+            "role": "engineer"
+        },
+        "admin": {
+            "password_hash": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
+            "display_name": "Admin",
+            "customers": [
+                "CustomerX",
+                "CustomerY",
+                "General"
+            ],
+            "role": "admin"
+        }
+    }
+}
