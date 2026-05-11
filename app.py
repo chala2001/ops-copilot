@@ -14,6 +14,46 @@ st.set_page_config(
     layout='wide',
     initial_sidebar_state='expanded'
 )
+
+
+from auth import check_login, get_user_customers as auth_get_customers
+
+# ── Session State for Authentication ─────────────────────
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+    st.session_state.user_info = None
+
+# ── Login Gate ────────────────────────────────────────────
+if not st.session_state.authenticated:
+    # Centre the login form
+    col_left, col_mid, col_right = st.columns([1, 2, 1])
+    with col_mid:
+        st.title('🔍 SRE Ops Copilot')
+        st.subheader('Sign in to continue')
+        st.divider()
+
+        with st.form('login_form'):
+            username = st.text_input('Username')
+            password = st.text_input('Password', type='password')
+            submit = st.form_submit_button('Sign in', use_container_width=True)
+
+        if submit:
+            if not username or not password:
+                st.error('Please enter both username and password.')
+            else:
+                user_info = check_login(username, password)
+                if user_info:
+                    st.session_state.authenticated = True
+                    st.session_state.user_info = user_info
+                    st.rerun()
+                else:
+                    st.error('Incorrect username or password.')
+    
+    st.stop()
+
+# ── From here down, user is authenticated ────────────────
+user_info = st.session_state.user_info
+current_user = user_info['username']
  
 # ── Custom CSS ────────────────────────────────────────────
 # Small style tweaks to make the UI cleaner.
@@ -42,17 +82,18 @@ with st.sidebar:
     st.caption('AI-powered deployment knowledge base')
     st.divider()
  
-    # ── User Selection ───────────────────────────────────
-    # In a real production app, this comes from your SSO login.
-    # For the internship demo, we let you pick the user.
-    current_user = st.selectbox(
-        'Logged in as',
-        options=['alice', 'bob', 'carol', 'admin'],
-        index=0
-    )
- 
-    # Get the customers this user can access
-    authorized_customers = get_authorized_customers(current_user)
+    # Show logged-in user
+    st.success(f"✓ {user_info['display_name']}")
+    if st.button('Sign out'):
+        st.session_state.authenticated = False
+        st.session_state.user_info = None
+        st.session_state.messages = []
+        st.rerun()
+    
+    st.divider()
+    
+    # Get customer scope from authenticated user
+    authorized_customers = user_info['customers']
  
     # ── Customer Scope Selector ──────────────────────────
     # Multi-select: the user can further narrow the search
