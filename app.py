@@ -5,6 +5,11 @@
 import streamlit as st
 from rag import ask, ask_stream, get_authorized_customers
  
+
+import time
+from logger import log_query
+
+
 # ── Page Configuration ────────────────────────────────────
 # MUST be the very first Streamlit command in the file.
 # layout='wide' uses the full browser width.
@@ -216,7 +221,7 @@ if prompt:
         'content': prompt
     })
 
-    # 3. Call RAG and display answer with STREAMING
+    # 3. Call RAG and display answer with STREAMING + LOGGING
     with st.chat_message('assistant'):
         # Streaming container
         sources_holder = []
@@ -225,31 +230,41 @@ if prompt:
             '''Wrapper to separate text from sources'''
             for piece in ask_stream(prompt, customer_scope):
                 if isinstance(piece, list):
-                    # This is the sources list - capture it
                     sources_holder.extend(piece)
                 else:
-                    # This is text - yield it for display
                     yield piece
         
-        # Stream the answer word-by-word
-        full_answer = st.write_stream(text_only_stream())
+        # Record start time BEFORE calling the stream
+        start_time = time.time()
+        
+        try:
+            # Stream the answer word-by-word
+            full_answer = st.write_stream(text_only_stream())
+            success = True
+            error_msg = None
+        except Exception as e:
+            full_answer = f'Error generating answer: {e}'
+            st.error(full_answer)
+            success = False
+            error_msg = str(e)
+        
+        # Record end time and calculate latency
+        end_time = time.time()
+        latency_ms = int((end_time - start_time) * 1000)
+        
         sources = sources_holder
-
-        # Display source chips
-        if sources:
-            chips_html = ' '.join([
-                f'<span class="source-chip">{s["source"].split("/")[-1]}</span>'
-                for s in sources[:3]
-            ])
-            st.markdown(f'**Sources:** {chips_html}', unsafe_allow_html=True)
-
-            with st.expander(f'View {len(sources)} source(s)'):
-                for src in sources:
-                    col1, col2, col3 = st.columns([3, 1, 1])
-                    col1.text(src['source'])
-                    col2.text(src['customer'])
-                    col3.text(f"{src['similarity']:.0%} match")
-
+        
+        # Log the query
+        log_query(
+            username=current_user,
+            question=prompt,
+            customer_scope=customer_scope,
+            answer=full_answer,
+            sources=sources,
+            latency_ms=latency_ms,
+            success=success,
+            error=error_msg
+        )
     # 4. Save assistant response to history
     st.session_state.messages.append({
         'role': 'assistant',
