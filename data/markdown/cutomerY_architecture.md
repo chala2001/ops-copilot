@@ -1,15 +1,15 @@
-;# CustomerX Deployment Architecture
+;# CustomerY Deployment Architecture
  
 ## Customer Overview
-CustomerX is running WSO2 API Manager version 4.2.1.
-Deployed on Azure Kubernetes Service (AKS) in East US 2 region.
-Last updated: March 2025.
+CustomerY is running WSO2 API Manager version 4.3.3.
+Deployed on Azure Kubernetes Service (AKS) in  US  region.
+Last updated: March 2026.
  
 ## AKS Configuration
 - Node pool type: Standard_D4s_v3
 - Autoscaling: enabled (min: 2 nodes, max: 8 nodes)
 - OS disk: 128 GB
-- Kubernetes version: 1.28.3
+- Kubernetes version: 1.28.7
  
 ## Known Issues
 - SRE-1042: Throttling policy sync delay under high load.

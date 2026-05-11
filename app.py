@@ -3,7 +3,7 @@
 # Run with: streamlit run app.py
  
 import streamlit as st
-from rag import ask, get_authorized_customers
+from rag import ask, ask_stream, get_authorized_customers
  
 # ── Page Configuration ────────────────────────────────────
 # MUST be the very first Streamlit command in the file.
@@ -35,6 +35,8 @@ st.markdown('''
  
 # ── Sidebar ──────────────────────────────────────────────
 # Everything inside 'with st.sidebar:' appears in the left panel.
+from rag import collection  # import collection count
+st.sidebar.metric('Total knowledge chunks', collection.count())
 with st.sidebar:
     st.title('SRE Ops Copilot')
     st.caption('AI-powered deployment knowledge base')
@@ -89,6 +91,22 @@ with st.sidebar:
 st.header('SRE Knowledge Base')
 st.caption(f'Searching as: {current_user} | Scope: {", ".join(customer_scope) if customer_scope else "None"}')
  
+ 
+#  Add a footer with instructions ─────────────────────
+st.divider()
+st.caption(
+    'SRE Ops Copilot · Powered by Gemini · '
+    'Answers are grounded in retrieved documentation only.'
+)
+
+# 4. Show a warning if no customer is selected ───────────
+if not customer_scope:
+    st.warning(
+        '⚠️ No customers selected. '
+        'Select at least one customer in the sidebar.'
+    )
+    st.stop()  # Stops the rest of the page from rendering
+
 # ── Session State Initialization ─────────────────────────
 # st.session_state is a dictionary that persists across reruns.
 # Streamlit reruns the ENTIRE script on every user interaction.
@@ -140,33 +158,42 @@ user_input = st.chat_input('Ask about any customer deployment...')
  
 # Use prefilled question OR actual user input
 prompt = prefilled or user_input
- 
-# ── Process New Question ──────────────────────────────────
+ # ── Process New Question ──────────────────────────────────
 if prompt:
     # Check that at least one customer is selected
     if not customer_scope:
         st.error('Select at least one customer from the sidebar.')
         st.stop()
- 
+
     # 1. Display the user's question
     with st.chat_message('user'):
         st.write(prompt)
- 
+
     # 2. Save user message to history
     st.session_state.messages.append({
         'role': 'user',
         'content': prompt
     })
- 
-    # 3. Call RAG and display answer
+
+    # 3. Call RAG and display answer with STREAMING
     with st.chat_message('assistant'):
-        # Show a spinner while waiting for Claude's response
-        with st.spinner('Searching knowledge base and generating answer...'):
-            answer, sources = ask(prompt, customer_scope)
- 
-        # Display the answer
-        st.write(answer)
- 
+        # Streaming container
+        sources_holder = []
+        
+        def text_only_stream():
+            '''Wrapper to separate text from sources'''
+            for piece in ask_stream(prompt, customer_scope):
+                if isinstance(piece, list):
+                    # This is the sources list - capture it
+                    sources_holder.extend(piece)
+                else:
+                    # This is text - yield it for display
+                    yield piece
+        
+        # Stream the answer word-by-word
+        full_answer = st.write_stream(text_only_stream())
+        sources = sources_holder
+
         # Display source chips
         if sources:
             chips_html = ' '.join([
@@ -174,17 +201,17 @@ if prompt:
                 for s in sources[:3]
             ])
             st.markdown(f'**Sources:** {chips_html}', unsafe_allow_html=True)
- 
+
             with st.expander(f'View {len(sources)} source(s)'):
                 for src in sources:
                     col1, col2, col3 = st.columns([3, 1, 1])
                     col1.text(src['source'])
                     col2.text(src['customer'])
                     col3.text(f"{src['similarity']:.0%} match")
- 
+
     # 4. Save assistant response to history
     st.session_state.messages.append({
         'role': 'assistant',
-        'content': answer,
+        'content': full_answer,
         'sources': sources
     })

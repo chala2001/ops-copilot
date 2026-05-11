@@ -176,6 +176,56 @@ def add_customer_metadata(docs):
 
     return docs
 
+# ── Helper: Load YAML deployment files ───────────────────
+def load_yaml_documents():
+    '''
+    Loads Kubernetes deployment YAML files.
+    These contain cluster configurations, deployments, services.
+    '''
+    yaml_path = Path('./data/yaml')
+    if not yaml_path.exists():
+        print('No yaml folder found at ./data/yaml, skipping.')
+        return []
+    
+    import yaml
+    all_docs = []
+    
+    from langchain_core.documents import Document
+    
+    for yaml_file in yaml_path.glob('**/*.yaml'):
+        print(f'Loading YAML: {yaml_file.name}')
+        try:
+            with open(yaml_file, 'r') as f:
+                # Use safe_load_all to handle files with multiple YAML documents (---)
+                yaml_docs = list(yaml.safe_load_all(f))
+            
+            for i, doc_content in enumerate(yaml_docs):
+                if not doc_content:
+                    continue
+                    
+                # Convert YAML to readable text format
+                text_content = f"# Kubernetes Configuration: {yaml_file.name} (Document {i+1})\n\n"
+                text_content += yaml.dump(doc_content, default_flow_style=False)
+                
+                # Create a LangChain Document object
+                doc = Document(
+                    page_content=text_content,
+                    metadata={
+                        'source': str(yaml_file),
+                        'doc_type': 'yaml',
+                        'filename': yaml_file.name,
+                        'yaml_index': i
+                    }
+                )
+                all_docs.append(doc)
+        
+        except Exception as e:
+            print(f'Error loading {yaml_file.name}: {e}')
+            continue
+    
+    print(f'Loaded {len(all_docs)} YAML files')
+    return all_docs
+
 # ── Helper: Split documents into chunks ──────────────────
 def split_documents(docs):
     splitter = RecursiveCharacterTextSplitter(
@@ -239,21 +289,28 @@ def run_ingestion():
     all_docs = []
     all_docs.extend(load_markdown_documents())
     all_docs.extend(load_pdf_documents())
-    all_docs.extend(load_confluence_documents())
-    all_docs.extend(load_github_documents())
-
+    all_docs.extend(load_yaml_documents())
+    
+    # Enrich metadata (customer labels, etc.)
+    all_docs = add_customer_metadata(all_docs)
+    
     if not all_docs:
-        print('No documents found! Add files or check connections.')
+        print('No documents found to ingest.')
         return
 
-    all_docs = add_customer_metadata(all_docs)
+    # Split into chunks
     chunks = split_documents(all_docs)
+    
+    # Store in ChromaDB
     store_in_chromadb(chunks)
-
+    
     print('=' * 50)
     print('Ingestion complete!')
     print('=' * 50)
 
+
+
+    
 if __name__ == '__main__':
     if '--clear' in sys.argv:
         clear_collection()
