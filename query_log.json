@@ -261,6 +261,153 @@
       "success": true,
       "error": null,
       "top_source": null
+    },
+    {
+      "timestamp": "2026-05-12T11:42:23.837549",
+      "username": "bob",
+      "question": "Who are the escalation contacts for CustomerX?",
+      "customer_scope": [
+        "CustomerX",
+        "General"
+      ],
+      "answer_length": 128,
+      "num_sources": 0,
+      "latency_ms": 530,
+      "success": true,
+      "error": null,
+      "top_source": null
+    },
+    {
+      "timestamp": "2026-05-12T11:43:23.668847",
+      "username": "bob",
+      "question": "What AKS node pool does CustomerX use?",
+      "customer_scope": [
+        "CustomerX",
+        "General"
+      ],
+      "answer_length": 128,
+      "num_sources": 0,
+      "latency_ms": 433,
+      "success": true,
+      "error": null,
+      "top_source": null
+    },
+    {
+      "timestamp": "2026-05-12T13:09:32.352146",
+      "username": "bob",
+      "question": "what is my name ?",
+      "customer_scope": [
+        "CustomerX",
+        "General"
+      ],
+      "answer_length": 66,
+      "num_sources": 3,
+      "latency_ms": 2537,
+      "success": true,
+      "error": null,
+      "top_source": "data/yaml/customerx-deployment.yaml"
+    },
+    {
+      "timestamp": "2026-05-12T13:10:15.256296",
+      "username": "bob",
+      "question": "what is the kubernrst version we use in customer x ?",
+      "customer_scope": [
+        "CustomerX",
+        "General"
+      ],
+      "answer_length": 51,
+      "num_sources": 3,
+      "latency_ms": 2448,
+      "success": true,
+      "error": null,
+      "top_source": "data/yaml/customerx-deployment.yaml"
+    },
+    {
+      "timestamp": "2026-05-12T13:11:31.870411",
+      "username": "bob",
+      "question": "Are there any known issues for CustomerX?",
+      "customer_scope": [
+        "CustomerX",
+        "General"
+      ],
+      "answer_length": 246,
+      "num_sources": 3,
+      "latency_ms": 2683,
+      "success": true,
+      "error": null,
+      "top_source": "data/markdown/customerX_architecture.md"
+    },
+    {
+      "timestamp": "2026-05-12T13:59:39.058836",
+      "username": "bob",
+      "question": "cutomer y version ?",
+      "customer_scope": "ALL",
+      "answer_length": 82,
+      "num_sources": 3,
+      "latency_ms": 2088,
+      "success": true,
+      "error": null,
+      "top_source": "data/yaml/customerx-deployment.yaml"
+    },
+    {
+      "timestamp": "2026-05-12T13:59:48.368464",
+      "username": "bob",
+      "question": "customer x version they use ?",
+      "customer_scope": "ALL",
+      "answer_length": 76,
+      "num_sources": 3,
+      "latency_ms": 2306,
+      "success": true,
+      "error": null,
+      "top_source": "data/yaml/customerx-deployment.yaml"
+    },
+    {
+      "timestamp": "2026-05-12T14:00:17.047530",
+      "username": "bob",
+      "question": "what is the deploymnet details u have about any customer give each ",
+      "customer_scope": "ALL",
+      "answer_length": 1138,
+      "num_sources": 3,
+      "latency_ms": 5587,
+      "success": true,
+      "error": null,
+      "top_source": "data/yaml/customerx-deployment.yaml"
+    },
+    {
+      "timestamp": "2026-05-12T14:24:55.604128",
+      "username": "admin",
+      "question": "is any company deployment detials u have which one?",
+      "customer_scope": "ALL",
+      "answer_length": 751,
+      "num_sources": 3,
+      "latency_ms": 3784,
+      "success": true,
+      "error": null,
+      "top_source": "data/yaml/customerx-deployment.yaml"
+    },
+    {
+      "timestamp": "2026-05-12T14:26:17.029056",
+      "username": "admin",
+      "question": "how about the detail about cutomerx ",
+      "customer_scope": "ALL",
+      "answer_length": 847,
+      "num_sources": 3,
+      "latency_ms": 4998,
+      "success": true,
+      "error": null,
+      "top_source": "data/yaml/customerx-deployment.yaml"
+    },
+    {
+      "timestamp": "2026-05-12T14:26:44.154246",
+      "username": "admin",
+      "question": "okay thank you",
+      "customer_scope": "ALL",
+      "answer_length": 33,
+      "num_sources": 3,
+      "latency_ms": 2785,
+      "success": true,
+      "error": null,
+      "top_source": "data/yaml/customerx-deployment.yaml"
     }
   ]
 }

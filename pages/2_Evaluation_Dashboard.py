@@ -1,9 +1,10 @@
 # pages/2_Evaluation_Dashboard.py
-# Evaluation quality dashboard with exception handling
+# Evaluation quality dashboard with authentication and exception handling
 
 import streamlit as st
 import json
 import os
+import sys
 import logging
 from datetime import datetime
 
@@ -17,8 +18,63 @@ st.set_page_config(
     layout='wide'
 )
 
+# ──────────────────────────────────────────────────────────
+# AUTHENTICATION CHECK
+# ──────────────────────────────────────────────────────────
+from auth import check_login
+
+# Initialize session state
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+    st.session_state.user_info = None
+
+# Check if user is logged in
+if not st.session_state.authenticated:
+    st.warning('🔒 Please log in to access this page.')
+    st.info('👉 Go to the main Chat page to log in.')
+    
+    # Show login form
+    st.divider()
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.subheader('Login')
+        
+        with st.form('login_form'):
+            username = st.text_input('Username')
+            password = st.text_input('Password', type='password')
+            submit = st.form_submit_button('Sign in', use_container_width=True)
+        
+        if submit:
+            if username and password:
+                user_info = check_login(username, password)
+                if user_info:
+                    st.session_state.authenticated = True
+                    st.session_state.user_info = user_info
+                    st.success('✅ Login successful! Redirecting...')
+                    st.rerun()
+                else:
+                    st.error('❌ Invalid credentials')
+            else:
+                st.error('❌ Please enter username and password')
+    
+    st.stop()  # Stop rendering the page
+
+# User is authenticated - show their info
+user_info = st.session_state.user_info
+st.sidebar.success(f"✓ Logged in as: {user_info['display_name']}")
+
+if st.sidebar.button('Sign out'):
+    st.session_state.authenticated = False
+    st.session_state.user_info = None
+    st.rerun()
+# ──────────────────────────────────────────────────────────
+# END AUTHENTICATION CHECK
+# ──────────────────────────────────────────────────────────
+
 st.title('📊 RAG Quality Dashboard')
-st.caption('Run: python evaluate.py  to update these scores.')
+st.caption('Run: python evaluate.py to update these scores.')
 
 RESULTS_FILE = 'evaluation_results.json'
 
@@ -152,23 +208,31 @@ try:
         with st.spinner('Running evaluation... This takes 2-3 minutes'):
             try:
                 import subprocess
+                
+                # Use sys.executable for correct Python interpreter
                 result = subprocess.run(
-                    ['python', 'evaluate.py'],
+                    [sys.executable, 'evaluate.py'],
                     capture_output=True,
                     text=True,
-                    timeout=300  # 5 minute timeout
+                    timeout=300,  # 5 minute timeout
+                    cwd=os.getcwd()
                 )
+                
                 if result.returncode == 0:
-                    st.success('✅ Evaluation complete! Refresh this page.')
+                    st.success('✅ Evaluation complete! Refreshing page...')
                     st.rerun()
                 else:
-                    st.error(f'❌ Evaluation failed')
+                    st.error('❌ Evaluation failed')
                     with st.expander('Error details'):
-                        st.code(result.stderr)
+                        st.code(result.stderr, language='text')
+                        
             except subprocess.TimeoutExpired:
                 st.error('⏱️ Evaluation timed out after 5 minutes')
+            except FileNotFoundError:
+                st.error('❌ evaluate.py not found')
             except Exception as btn_error:
                 logger.error(f"Error running evaluation: {btn_error}")
                 st.error(f'❌ Error: {btn_error}')
+                
 except Exception as e:
     logger.error(f"Error in re-run section: {e}")

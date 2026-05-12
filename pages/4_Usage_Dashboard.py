@@ -5,13 +5,66 @@ import pandas as pd
 from datetime import datetime
 from logger import load_log
 
+# pages/4_Usage_Dashboard.py
+
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+from logger import load_log
+
 st.set_page_config(
     page_title='Usage Dashboard', 
     page_icon='📈', 
     layout='wide'
 )
 
+# ──────────────────────────────────────────────────────────
+# AUTHENTICATION CHECK
+# ──────────────────────────────────────────────────────────
+from auth import check_login
+
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+    st.session_state.user_info = None
+
+if not st.session_state.authenticated:
+    st.warning('🔒 Please log in to access this page.')
+    st.info('👉 Go to the main Chat page to log in.')
+    
+    st.divider()
+    st.subheader('Login')
+    
+    with st.form('login_form'):
+        username = st.text_input('Username')
+        password = st.text_input('Password', type='password')
+        submit = st.form_submit_button('Sign in')
+    
+    if submit:
+        if username and password:
+            user_info = check_login(username, password)
+            if user_info:
+                st.session_state.authenticated = True
+                st.session_state.user_info = user_info
+                st.success('✅ Login successful!')
+                st.rerun()
+            else:
+                st.error('❌ Invalid credentials')
+        else:
+            st.error('❌ Please enter username and password')
+    
+    st.stop()
+
+user_info = st.session_state.user_info
+st.sidebar.success(f"✓ Logged in as: {user_info['display_name']}")
+
+if st.sidebar.button('Sign out'):
+    st.session_state.authenticated = False
+    st.session_state.user_info = None
+    st.rerun()
+# ──────────────────────────────────────────────────────────
+
 st.title('📈 Usage Dashboard')
+# ... rest of your existing code ...
 st.caption('Query analytics and system usage')
 
 # ── Load query log ────────────────────────────────────────
