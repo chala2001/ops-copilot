@@ -1176,24 +1176,22 @@ in the Software without restriction...
 - Internal SRE pain points at WSO2
 
 **Contributors:**
-- Alice Chen - Initial development
-- Bob Smith - Azure deployment
-- Carol Davis - Security improvements
-- Your name here - [Contribute!](#contributing)
+- Chalaka Perera- Initial development
+
 
 ---
 
 ## 📮 Contact
 
 **WSO2 SRE Team**
-- 🌐 Website: https://wso2.com
-- 📧 Email: sre-team@wso2.com
-- 💬 Slack: #sre-ops-copilot
-- 🐙 GitHub: https://github.com/wso2/ops-copilot-gemini
+- 🌐 Website: TBC
+- 📧 Email:TBC
+- 💬 Slack: TBC
+- 🐙 GitHub:TBC 
 
 **Project Maintainers:**
-- [@alice-chen](https://github.com/alice-chen) - Lead Developer
-- [@bob-smith](https://github.com/bob-smith) - DevOps Lead
+- TBC
+- TBC
 
 ---
 
