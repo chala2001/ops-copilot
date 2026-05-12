@@ -46,6 +46,20 @@ def ask(question: str, customer_scope: list) -> tuple:
     '''
     Main RAG query function.
     '''
+    
+    # ── Input validation ──────────────────────────────────
+    if not question or not question.strip():
+        return ('Please provide a question.', [])
+    
+    if len(question) > 2000:
+        return ('Question too long. Please keep it under 2000 characters.', [])
+    
+    if not customer_scope:
+        return ('No customer scope selected. Please select at least one customer.', [])
+    
+    if collection.count() == 0:
+        return ('The knowledge base is empty. Please run: python ingest.py', [])
+    
 
     # ── Step 1: Convert question to a vector ─────────────
     question_embedding = embedder.encode(question).tolist()
@@ -103,15 +117,30 @@ Question: {question}
 
 Answer based only on the context above:'''
 
-    # ── Step 5: Call Gemini API ───────────────────────────
+    # ── Step 5: Call Gemini API with error handling ───────
     full_prompt = f"{system_prompt}\n\n{user_message}"
     
-    response = client.models.generate_content(
-        model=LLM_MODEL,
-        contents=full_prompt
-    )
+    try:
+        response = client.models.generate_content(
+            model=LLM_MODEL,
+            contents=full_prompt
+        )
+        answer = response.text
+    
+    except Exception as e:
+        # Catch Gemini API errors
+        error_msg = str(e)
+        if '429' in error_msg:
+            answer = ('Rate limit reached. Please wait a moment and try again. '
+                     '(Gemini free tier: 15 requests per minute)')
+        elif 'API key' in error_msg or 'authentication' in error_msg.lower():
+            answer = 'API authentication failed. Check your GOOGLE_API_KEY in .env file.'
+        else:
+            answer = f'Error generating response: {error_msg}'
+        
+        return answer, []
 
-    answer = response.text
+
 
     # ── Step 6: Return answer + sources ──────────────────
     sources = []

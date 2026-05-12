@@ -1,0 +1,45 @@
+services:
+  
+  app:
+    build: .
+    container_name: ops-copilot-app
+    
+    ports:
+      - '8501:8501'
+    
+    env_file:
+      - .env
+    
+    volumes:
+      - ./data:/app/data
+      - ./chroma_db:/app/chroma_db
+      - ./query_log.json:/app/query_log.json
+      - ./ingestion_state.json:/app/ingestion_state.json
+      - ./evaluation_results.json:/app/evaluation_results.json
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8501/_stcore/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  
+  scheduler:
+    build: .
+    container_name: ops-copilot-scheduler
+    command: python scheduler.py
+    
+    env_file:
+      - .env
+    
+    volumes:
+      - ./data:/app/data
+      - ./chroma_db:/app/chroma_db
+      - ./ingestion_state.json:/app/ingestion_state.json
+    
+    restart: unless-stopped
+    
+    depends_on:
+      app:
+        condition: service_healthy
