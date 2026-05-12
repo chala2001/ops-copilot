@@ -42,7 +42,7 @@ def log_query(
                 'timestamp':      datetime.now().isoformat(),
                 'username':       str(username),
                 'question':       str(question)[:500],  # Limit length
-                'customer_scope': customer_scope,
+                'customer_scope': 'ALL',
                 'answer_length':  len(answer) if answer else 0,
                 'num_sources':    len(sources),
                 'latency_ms':     int(latency_ms) if latency_ms else 0,

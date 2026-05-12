@@ -1,15 +1,16 @@
-# app.py - Streamlit Chat Interface with Complete Exception Handling
-
+# app.py
+# ── SRE Ops Copilot — Streamlit Chat Interface ──────────
+# Run with: streamlit run app.py
+ 
 import streamlit as st
+from rag import ask, ask_stream, get_authorized_customers
 import time
-import logging
-from typing import Optional
+from logger import log_query
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-# ── Page Configuration (MUST be first) ────────────────────
+# ── Page Configuration ────────────────────────────────────
+# MUST be the very first Streamlit command in the file.
+# layout='wide' uses the full browser width.
 st.set_page_config(
     page_title='SRE Ops Copilot',
     page_icon='🔍',
@@ -17,19 +18,49 @@ st.set_page_config(
     initial_sidebar_state='expanded'
 )
 
-# ── Import modules with error handling ────────────────────
-try:
-    from rag import ask, ask_stream, get_authorized_customers, collection
-    from logger import log_query
-    from auth import check_login, get_user_customers as auth_get_customers
-except ImportError as e:
-    st.error(f"❌ Critical error: Missing module - {e}")
-    st.stop()
-except Exception as e:
-    st.error(f"❌ Initialization error: {e}")
+
+from auth import check_login, get_user_customers as auth_get_customers
+
+# ── Session State for Authentication ─────────────────────
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+    st.session_state.user_info = None
+
+# ── Login Gate ────────────────────────────────────────────
+if not st.session_state.authenticated:
+    # Centre the login form
+    col_left, col_mid, col_right = st.columns([1, 2, 1])
+    with col_mid:
+        st.title('🔍 SRE Ops Copilot')
+        st.subheader('Sign in to continue')
+        st.divider()
+
+        with st.form('login_form'):
+            username = st.text_input('Username')
+            password = st.text_input('Password', type='password')
+            submit = st.form_submit_button('Sign in', use_container_width=True)
+
+        if submit:
+            if not username or not password:
+                st.error('Please enter both username and password.')
+            else:
+                user_info = check_login(username, password)
+                if user_info:
+                    st.session_state.authenticated = True
+                    st.session_state.user_info = user_info
+                    st.rerun()
+                else:
+                    st.error('Incorrect username or password.')
+    
     st.stop()
 
-# ── Custom CSS ─────────────────────────────────────────────
+# ── From here down, user is authenticated ────────────────
+user_info = st.session_state.user_info
+current_user = user_info['username']
+ 
+# ── Custom CSS ────────────────────────────────────────────
+# Small style tweaks to make the UI cleaner.
+# Streamlit uses st.markdown with unsafe_allow_html=True for CSS.
 st.markdown('''
 <style>
     .source-chip {
@@ -44,110 +75,40 @@ st.markdown('''
     }
 </style>
 ''', unsafe_allow_html=True)
-
-# ── Session State Initialization ───────────────────────────
-try:
-    if 'authenticated' not in st.session_state:
-        st.session_state.authenticated = False
-        st.session_state.user_info = None
-    if 'messages' not in st.session_state:
-        st.session_state.messages = []
-except Exception as e:
-    logger.error(f"Session state initialization error: {e}")
-    st.error("Error initializing session. Please refresh the page.")
-    st.stop()
-
-# ── Login Gate with Exception Handling ─────────────────────
-if not st.session_state.authenticated:
-    col_left, col_mid, col_right = st.columns([1, 2, 1])
-    with col_mid:
-        st.title('🔍 SRE Ops Copilot')
-        st.subheader('Sign in to continue')
-        st.divider()
-
-        with st.form('login_form'):
-            username = st.text_input('Username')
-            password = st.text_input('Password', type='password')
-            submit = st.form_submit_button('Sign in', use_container_width=True)
-
-        if submit:
-            try:
-                if not username or not password:
-                    st.error('Please enter both username and password.')
-                else:
-                    user_info = check_login(username, password)
-                    if user_info:
-                        st.session_state.authenticated = True
-                        st.session_state.user_info = user_info
-                        st.rerun()
-                    else:
-                        st.error('Incorrect username or password.')
-            except FileNotFoundError:
-                st.error('❌ User database not found. Contact administrator.')
-            except Exception as e:
-                logger.error(f"Login error: {e}")
-                st.error(f'Login system error. Please try again.')
-    
-    st.stop()
-
-# ── Authenticated Section ──────────────────────────────────
-try:
-    user_info = st.session_state.user_info
-    current_user = user_info['username']
-except (KeyError, TypeError) as e:
-    logger.error(f"User info error: {e}")
-    st.error("Session corrupted. Please log in again.")
-    st.session_state.authenticated = False
-    st.rerun()
-
-# ── Sidebar with Exception Handling ────────────────────────
-try:
-    st.sidebar.metric('Total knowledge chunks', collection.count())
-except Exception as e:
-    logger.warning(f"Error getting collection count: {e}")
-    st.sidebar.metric('Total knowledge chunks', 'N/A')
-
+ 
+# ── Sidebar ──────────────────────────────────────────────
+# Everything inside 'with st.sidebar:' appears in the left panel.
+from rag import collection  # import collection count
+st.sidebar.metric('Total knowledge chunks', collection.count())
 with st.sidebar:
     st.title('SRE Ops Copilot')
     st.caption('AI-powered deployment knowledge base')
     st.divider()
  
     # Show logged-in user
-    try:
-        st.success(f"✓ {user_info['display_name']}")
-        if st.button('Sign out'):
-            st.session_state.authenticated = False
-            st.session_state.user_info = None
-            st.session_state.messages = []
-            st.rerun()
-    except Exception as e:
-        logger.error(f"Sidebar user display error: {e}")
-        st.error("Display error")
+    st.success(f"✓ {user_info['display_name']}")
+    if st.button('Sign out'):
+        st.session_state.authenticated = False
+        st.session_state.user_info = None
+        st.session_state.messages = []
+        st.rerun()
     
     st.divider()
     
-    # Get customer scope
-    try:
-        authorized_customers = user_info['customers']
-    except (KeyError, TypeError):
-        logger.warning("Customers key missing from user_info")
-        authorized_customers = ['General']
- 
-    # Customer scope selector
-    try:
-        customer_scope = st.multiselect(
-            'Search within customers',
-            options=authorized_customers,
-            default=authorized_customers,
-            help='Only documents for selected customers will be searched'
-        )
-    except Exception as e:
-        logger.error(f"Customer selector error: {e}")
-        customer_scope = authorized_customers
+    # ═══════════════════════════════════════════════════════
+    # MODIFIED: Remove customer scope selector
+    # Everyone has full access to all documents
+    # ═══════════════════════════════════════════════════════
+    customer_scope = None  # None means search ALL documents
+    
+    # Show full access indicator
+    st.info('🔓 **Full Access Mode**\nSearch across all customer documents')
+    # ═══════════════════════════════════════════════════════
  
     st.divider()
  
-    # Suggested questions
+    # ── Suggested Questions ──────────────────────────────
+    # Quick-start buttons for common queries.
     st.subheader('Try asking:')
     example_questions = [
         'What version is CustomerX running?',
@@ -155,189 +116,167 @@ with st.sidebar:
         'Who are the escalation contacts for CustomerX?',
         'Are there any known issues for CustomerX?',
     ]
-    
     for q in example_questions:
-        try:
-            if st.button(q, use_container_width=True, key=q):
-                st.session_state['prefilled_question'] = q
-        except Exception as e:
-            logger.warning(f"Button error for question: {e}")
-            continue
+        if st.button(q, use_container_width=True, key=q):
+            # When clicked, add to session state as if user typed it
+            st.session_state['prefilled_question'] = q
  
     st.divider()
  
-    # Clear chat button
-    try:
-        if st.button('Clear conversation', use_container_width=True):
-            st.session_state.messages = []
-            st.rerun()
-    except Exception as e:
-        logger.error(f"Clear button error: {e}")
-
-# ── Main Chat Area ─────────────────────────────────────────
+    # ── Clear Chat Button ────────────────────────────────
+    if st.button('Clear conversation', use_container_width=True):
+        st.session_state.messages = []
+        st.rerun()  # Force page refresh to clear the chat display
+ 
+# ── Main Chat Area ───────────────────────────────────────
 st.header('SRE Knowledge Base')
-try:
-    st.caption(f'Searching as: {current_user} | Scope: {", ".join(customer_scope) if customer_scope else "None"}')
-except Exception:
-    st.caption(f'Searching as: {current_user}')
-
+# ═══════════════════════════════════════════════════════
+# MODIFIED: Update caption to show full access
+# ═══════════════════════════════════════════════════════
+st.caption(f'Searching as: {current_user} | Access: All Customers')
+# ═══════════════════════════════════════════════════════
+ 
+ 
+# Add a footer with instructions ─────────────────────
 st.divider()
-st.caption('SRE Ops Copilot · Powered by Gemini · Answers are grounded in retrieved documentation only.')
+st.caption(
+    'SRE Ops Copilot · Powered by Gemini · '
+    'Answers are grounded in retrieved documentation only.'
+)
 
-# Check customer scope
-if not customer_scope:
-    st.warning('⚠️ No customers selected. Select at least one customer in the sidebar.')
-    st.stop()
+# ═══════════════════════════════════════════════════════
+# MODIFIED: Remove customer scope validation
+# No need to check - everyone has full access
+# ═══════════════════════════════════════════════════════
+# REMOVED: Customer scope warning check
+# ═══════════════════════════════════════════════════════
 
-# Display welcome message
-try:
-    if not st.session_state.messages:
-        st.info('Ask me anything about your customer deployments. I will search the knowledge base and cite my sources.')
-except Exception as e:
-    logger.error(f"Welcome message error: {e}")
-
-# ── Render Chat History with Exception Handling ────────────
-try:
-    for msg in st.session_state.messages:
-        try:
-            with st.chat_message(msg['role']):
-                st.write(msg['content'])
-         
-                if msg['role'] == 'assistant' and msg.get('sources'):
-                    sources = msg['sources']
-                    try:
-                        chips_html = ' '.join([
-                            f'<span class="source-chip">{s["source"].split("/")[-1]}</span>'
-                            for s in sources[:3]
-                        ])
-                        st.markdown(f'**Sources:** {chips_html}', unsafe_allow_html=True)
-                    except Exception as chip_error:
-                        logger.warning(f"Source chip error: {chip_error}")
-                    
-                    try:
-                        with st.expander(f'View {len(sources)} source(s)'):
-                            for src in sources:
-                                col1, col2, col3 = st.columns([3, 1, 1])
-                                col1.text(src.get('source', 'Unknown'))
-                                col2.text(src.get('customer', 'General'))
-                                col3.text(f"{src.get('similarity', 0):.0%} match")
-                    except Exception as expander_error:
-                        logger.warning(f"Source expander error: {expander_error}")
-        except Exception as msg_error:
-            logger.error(f"Message render error: {msg_error}")
-            continue
-except Exception as e:
-    logger.error(f"Chat history render error: {e}")
-
-# ── Chat Input with Exception Handling ─────────────────────
-try:
-    prefilled = st.session_state.pop('prefilled_question', None)
-except Exception:
-    prefilled = None
-
-try:
-    user_input = st.chat_input('Ask about any customer deployment...')
-except Exception as e:
-    logger.error(f"Chat input error: {e}")
-    user_input = None
-
+# ── Session State Initialization ─────────────────────────
+# st.session_state is a dictionary that persists across reruns.
+# Streamlit reruns the ENTIRE script on every user interaction.
+# Without session_state, the chat history would vanish on every message.
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
+ 
+# ── Display Welcome Message ──────────────────────────────
+if not st.session_state.messages:
+    st.info(
+        'Ask me anything about your customer deployments. '
+        'I will search the knowledge base and cite my sources.'
+    )
+ 
+# ── Render All Chat History ──────────────────────────────
+# Loop through all previous messages and display them.
+# st.chat_message('user') shows a user avatar + bubble.
+# st.chat_message('assistant') shows an assistant avatar + bubble.
+for msg in st.session_state.messages:
+    with st.chat_message(msg['role']):
+        st.write(msg['content'])
+ 
+        # Show source citations for assistant messages
+        if msg['role'] == 'assistant' and msg.get('sources'):
+            sources = msg['sources']
+            # Show top 3 sources as chips
+            chips_html = ' '.join([
+                f'<span class="source-chip">{s["source"].split("/")[-1]}</span>'
+                for s in sources[:3]
+            ])
+            st.markdown(f'**Sources:** {chips_html}', unsafe_allow_html=True)
+ 
+            # Show full details in a collapsible section
+            with st.expander(f'View {len(sources)} source(s)'):
+                for i, src in enumerate(sources):
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    col1.text(src['source'])
+                    col2.text(src['customer'])
+                    col3.text(f"{src['similarity']:.0%} match")
+ 
+# ── Handle Pre-filled Question (from sidebar buttons) ────
+# If a user clicked a suggested question, inject it
+prefilled = st.session_state.pop('prefilled_question', None)
+ 
+# ── Chat Input Box ────────────────────────────────────────
+# st.chat_input renders a fixed input bar at the bottom.
+# It returns None until the user submits (press Enter or click Send).
+user_input = st.chat_input('Ask about any customer deployment...')
+ 
+# Use prefilled question OR actual user input
 prompt = prefilled or user_input
 
-# ── Process Question with Complete Exception Handling ──────
+# ── Process New Question ──────────────────────────────────
 if prompt:
-    if not customer_scope:
-        st.error('Select at least one customer from the sidebar.')
-        st.stop()
+    # ═══════════════════════════════════════════════════════
+    # MODIFIED: Remove customer scope validation
+    # Everyone searches all documents automatically
+    # ═══════════════════════════════════════════════════════
+    # REMOVED: Customer scope check
+    # ═══════════════════════════════════════════════════════
 
-    # Display user question
-    try:
-        with st.chat_message('user'):
-            st.write(prompt)
-        
-        st.session_state.messages.append({
-            'role': 'user',
-            'content': prompt
-        })
-    except Exception as e:
-        logger.error(f"Error displaying user message: {e}")
-        st.error("Failed to display your question. Please try again.")
-        st.stop()
+    # 1. Display the user's question
+    with st.chat_message('user'):
+        st.write(prompt)
 
-    # Generate answer with streaming
+    # 2. Save user message to history
+    st.session_state.messages.append({
+        'role': 'user',
+        'content': prompt
+    })
+
+    # 3. Call RAG and display answer with STREAMING + LOGGING
     with st.chat_message('assistant'):
+        # Streaming container
         sources_holder = []
-        full_answer = ""
-        success = True
-        error_msg = None
         
         def text_only_stream():
-            '''Wrapper to separate text from sources with error handling'''
-            try:
-                for piece in ask_stream(prompt, customer_scope):
-                    if isinstance(piece, list):
-                        sources_holder.extend(piece)
-                    else:
-                        yield piece
-            except Exception as stream_error:
-                logger.error(f"Streaming error: {stream_error}")
-                yield f"\n\n❌ Error during streaming: {str(stream_error)[:100]}"
+            '''Wrapper to separate text from sources'''
+            # ═══════════════════════════════════════════════════════
+            # MODIFIED: Pass customer_scope=None for full access
+            # ═══════════════════════════════════════════════════════
+            for piece in ask_stream(prompt, customer_scope=None):
+            # ═══════════════════════════════════════════════════════
+                if isinstance(piece, list):
+                    sources_holder.extend(piece)
+                else:
+                    yield piece
         
+        # Record start time BEFORE calling the stream
         start_time = time.time()
         
         try:
+            # Stream the answer word-by-word
             full_answer = st.write_stream(text_only_stream())
             success = True
+            error_msg = None
         except Exception as e:
-            logger.error(f"Stream display error: {e}")
             full_answer = f'Error generating answer: {e}'
             st.error(full_answer)
             success = False
             error_msg = str(e)
         
+        # Record end time and calculate latency
         end_time = time.time()
         latency_ms = int((end_time - start_time) * 1000)
         
         sources = sources_holder
         
-        # Display sources
-        try:
-            if sources:
-                chips_html = ' '.join([
-                    f'<span class="source-chip">{s.get("source", "Unknown").split("/")[-1]}</span>'
-                    for s in sources[:3]
-                ])
-                st.markdown(f'**Sources:** {chips_html}', unsafe_allow_html=True)
-
-                with st.expander(f'View {len(sources)} source(s)'):
-                    for src in sources:
-                        col1, col2, col3 = st.columns([3, 1, 1])
-                        col1.text(src.get('source', 'Unknown'))
-                        col2.text(src.get('customer', 'General'))
-                        col3.text(f"{src.get('similarity', 0):.0%} match")
-        except Exception as source_error:
-            logger.warning(f"Source display error: {source_error}")
+        # ═══════════════════════════════════════════════════════
+        # MODIFIED: Log with 'ALL' instead of customer list
+        # ═══════════════════════════════════════════════════════
+        log_query(
+            username=current_user,
+            question=prompt,
+            customer_scope=['ALL'],  # Changed from customer_scope list
+            answer=full_answer,
+            sources=sources,
+            latency_ms=latency_ms,
+            success=success,
+            error=error_msg
+        )
+        # ═══════════════════════════════════════════════════════
         
-        # Log query
-        try:
-            log_query(
-                username=current_user,
-                question=prompt,
-                customer_scope=customer_scope,
-                answer=full_answer,
-                sources=sources,
-                latency_ms=latency_ms,
-                success=success,
-                error=error_msg
-            )
-        except Exception as log_error:
-            logger.error(f"Logging error: {log_error}")
-    
-    # Save to history
-    try:
-        st.session_state.messages.append({
-            'role': 'assistant',
-            'content': full_answer,
-            'sources': sources
-        })
-    except Exception as history_error:
-        logger.error(f"Error saving to history: {history_error}")
+    # 4. Save assistant response to history
+    st.session_state.messages.append({
+        'role': 'assistant',
+        'content': full_answer,
+        'sources': sources
+    })

@@ -1,42 +1,36 @@
 {
-    "users": {
-        "alice": {
-            "password_hash": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
-            "display_name": "Alice (Senior SRE)",
-            "customers": [
-                "CustomerX",
-                "CustomerY",
-                "General"
-            ],
-            "role": "senior"
-        },
-        "bob": {
-            "password_hash": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
-            "display_name": "Bob (SRE)",
-            "customers": [
-                "CustomerX",
-                "General"
-            ],
-            "role": "engineer"
-        },
-        "carol": {
-            "password_hash": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
-            "display_name": "Carol (SRE)",
-            "customers": [
-                "CustomerY",
-                "General"
-            ],
-            "role": "engineer"
-        },
-        "admin": {
-            "password_hash": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
-            "display_name": "Admin",
-            "customers": [
-                "CustomerX",
-                "CustomerY",
-                "General"
-            ],
-            "role": "admin"
-        }
+  "users": {
+    "alice": {
+      "password_hash": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
+      "display_name": "Alice (Senior SRE)",
+      "customers": [
+        "ALL"
+      ],
+      "role": "senior_sre"
+    },
+    "carol": {
+      "password_hash": "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8",
+      "display_name": "Carol (SRE)",
+      "customers": [
+        "ALL"
+      ],
+      "role": "sre"
+    },
+    "admin": {
+      "password_hash": "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918",
+      "display_name": "Admin",
+      "customers": [
+        "ALL"
+      ],
+      "role": "admin"
+    },
+    "chalaka": {
+      "password_hash": "716426738ba398dfafe35bc7621ee973c46ba42288229e3552953ce6bd35dac2",
+      "display_name": "Chalaka",
+      "customers": [
+        "ALL"
+      ],
+      "role": "sre"
     }
+  }
 }
