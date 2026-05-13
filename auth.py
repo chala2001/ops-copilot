@@ -1,35 +1,48 @@
-# auth.py - Authentication with Complete Exception Handling
+# auth.py
+# ── Enterprise Authentication with bcrypt ─────────────────
+# Replaces the previous SHA-256 hashing with bcrypt.
+# bcrypt is intentionally slow (~100ms per hash) which makes
+# brute-force attacks computationally infeasible.
 
-import hashlib
+import bcrypt
 import json
 import logging
 from pathlib import Path
 from typing import Optional, Dict
 
-# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 USERS_FILE = 'users.json'
 
+
 def load_users() -> dict:
-    '''Load user data from users.json with error handling.'''
+    """
+    Load user data from users.json.
+
+    Returns the inner 'users' dict on success.
+    Raises FileNotFoundError or ValueError on bad file state.
+
+    This function is called on EVERY login attempt so it always
+    reads the latest users.json from disk — no caching. This means
+    you can add/remove users without restarting the app.
+    """
     try:
         if not Path(USERS_FILE).exists():
             logger.error(f'{USERS_FILE} not found')
             raise FileNotFoundError(
                 f'{USERS_FILE} not found. Create it with user credentials.'
             )
-        
+
         with open(USERS_FILE, 'r', encoding='utf-8') as f:
             data = json.load(f)
-            
+
         if 'users' not in data:
             logger.error(f'{USERS_FILE} missing "users" key')
             raise ValueError(f'{USERS_FILE} has invalid format')
-            
+
         return data['users']
-    
+
     except json.JSONDecodeError as e:
         logger.error(f'Invalid JSON in {USERS_FILE}: {e}')
         raise ValueError(f'{USERS_FILE} contains invalid JSON')
@@ -37,28 +50,112 @@ def load_users() -> dict:
         logger.error(f'Error loading users: {e}')
         raise
 
+
 def hash_password(password: str) -> str:
-    '''Hash a password using SHA-256 with error handling.'''
+    """
+    Hash a password using bcrypt with automatic salt generation.
+
+    How it works:
+    1. bcrypt.gensalt(rounds=12) generates a random 22-character salt.
+       The 'rounds=12' means bcrypt will perform 2^12 = 4096 iterations
+       of its internal Blowfish cipher. This takes ~100ms on modern hardware.
+    2. bcrypt.hashpw() combines the password + salt through those 4096
+       iterations and returns a 60-character string like:
+       $2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewY5NU7LQv3c1yqB
+       │  │  │                    │
+       │  │  └── salt (22 chars) └── hash (31 chars)
+       │  └── cost factor (12)
+       └── bcrypt version identifier
+
+    The salt is embedded IN the output hash, so you don't store it
+    separately — bcrypt.checkpw() extracts it automatically later.
+
+    Args:
+        password: Plain-text password string
+
+    Returns:
+        str: A 60-character bcrypt hash string (includes salt)
+    """
     try:
         if not password:
             raise ValueError("Password cannot be empty")
-        return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
+        # rounds=12 is the industry standard balance of security vs speed.
+        # rounds=10 is minimum acceptable; rounds=14+ is very slow but
+        # provides additional protection as hardware improves.
+        salt = bcrypt.gensalt(rounds=12)
+        hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+
+        # bcrypt returns bytes; decode to str for JSON storage
+        return hashed.decode('utf-8')
+
     except Exception as e:
         logger.error(f'Password hashing error: {e}')
         raise
 
-def check_login(username: str, password: str) -> Optional[Dict]:
-    '''
-    Verify username and password with complete error handling.
-    Returns user info dict if correct, None if wrong.
-    '''
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    """
+    Verify a plain-text password against a stored bcrypt hash.
+
+    How it works:
+    1. bcrypt.checkpw() extracts the salt from stored_hash (first 29 chars).
+    2. It hashes the provided password using the SAME salt and cost factor.
+    3. It compares the two hashes using constant-time comparison to prevent
+       timing attacks (an attacker cannot measure response time to guess
+       how many characters of the hash matched).
+
+    This is fundamentally different from SHA-256 where you would do:
+        hashlib.sha256(password).hexdigest() == stored_hash
+    That comparison is NOT constant-time and is also fast to brute force.
+
+    Args:
+        password: Plain-text password to check
+        stored_hash: The bcrypt hash string from users.json
+
+    Returns:
+        bool: True if password matches, False otherwise
+    """
     try:
-        # Input validation
+        if not password or not stored_hash:
+            return False
+
+        # bcrypt.checkpw handles salt extraction, hashing, and constant-time
+        # comparison all in one call.
+        return bcrypt.checkpw(
+            password.encode('utf-8'),
+            stored_hash.encode('utf-8')
+        )
+
+    except Exception as e:
+        logger.error(f'Password verification error: {e}')
+        return False
+
+
+def check_login(username: str, password: str) -> Optional[Dict]:
+    """
+    Verify username and password. Returns user info dict on success, None on failure.
+
+    Security notes:
+    - We do NOT reveal whether the username or password was wrong.
+      Both cases return None. This prevents username enumeration attacks.
+    - We call verify_password() even for unknown users to maintain
+      constant response time (prevents timing-based user enumeration).
+    - The returned dict NEVER includes the password_hash.
+
+    Args:
+        username: The username submitted in the login form
+        password: The plain-text password submitted in the login form
+
+    Returns:
+        dict with keys: username, display_name, customers, role
+        OR None if credentials are invalid
+    """
+    try:
         if not username or not password:
-            logger.warning("Empty username or password")
+            logger.warning("Login attempt with empty username or password")
             return None
-        
-        # Load users
+
         try:
             users = load_users()
         except FileNotFoundError:
@@ -68,66 +165,150 @@ def check_login(username: str, password: str) -> Optional[Dict]:
             logger.error(f"Failed to load users during login: {e}")
             return None
 
-        # Check if user exists
         if username not in users:
             logger.info(f"Login attempt for non-existent user: {username}")
+            # Still call verify_password with a dummy hash to keep response
+            # time consistent — prevents timing-based username enumeration.
+            verify_password(password, "$2b$12$dummyhashfornon.existentuserXXXXXXXXXXXXXXXXXXXXXXXX")
             return None
 
         user = users[username]
-        
-        # Validate user data structure
+
         if not isinstance(user, dict):
             logger.error(f"Invalid user data structure for {username}")
             return None
-        
+
         if 'password_hash' not in user:
             logger.error(f"Missing password_hash for user {username}")
             return None
-        
-        # Hash provided password
-        try:
-            provided_hash = hash_password(password)
-        except Exception as e:
-            logger.error(f"Failed to hash password during login: {e}")
-            return None
 
-        # Compare hashes
-        if provided_hash != user['password_hash']:
+        stored_hash = user['password_hash']
+
+        # This is the key difference from the old SHA-256 code.
+        # Old code: hashlib.sha256(password.encode()).hexdigest() == stored_hash
+        # New code: bcrypt.checkpw() — handles salt, iterations, constant-time
+        if not verify_password(password, stored_hash):
             logger.info(f"Failed login attempt for user: {username}")
             return None
 
-        # Successful login - return user info
         logger.info(f"Successful login for user: {username}")
-        
+
+        # Return safe user info — never include the password_hash itself.
         return {
             'username':     username,
             'display_name': user.get('display_name', username),
-            'customers':    user.get('customers', ['General']),
-            'role':         user.get('role', 'user')
+            'customers':    user.get('customers', ['ALL']),
+            'role':         user.get('role', 'sre')
         }
-    
+
     except Exception as e:
         logger.error(f"Unexpected error in check_login: {e}")
         return None
 
+
 def get_user_customers(username: str) -> list:
-    '''Get the list of customers a user can access with error handling.'''
+    """Get the list of customers a user can access."""
     try:
         users = load_users()
-        
+
         if username not in users:
             logger.warning(f"User {username} not found when getting customers")
-            return ['General']
-        
-        customers = users[username].get('customers', ['General'])
-        
-        # Validate customers is a list
+            return ['ALL']
+
+        customers = users[username].get('customers', ['ALL'])
+
         if not isinstance(customers, list):
             logger.warning(f"Invalid customers format for {username}")
-            return ['General']
-        
+            return ['ALL']
+
         return customers
-    
+
     except Exception as e:
         logger.error(f"Error getting customers for {username}: {e}")
-        return ['General']
+        return ['ALL']
+
+
+def create_user(username: str, password: str, display_name: str, role: str = 'sre') -> bool:
+    """
+    Create a new user and save to users.json.
+
+    This is called by the Admin Panel (pages/5_Admin_Panel.py).
+    The password is hashed with bcrypt before saving — the plain-text
+    password is NEVER stored anywhere.
+
+    Args:
+        username: Unique login name (no spaces)
+        password: Plain-text password (will be bcrypt-hashed immediately)
+        display_name: Full name shown in the UI
+        role: One of 'sre', 'senior_sre', 'admin'
+
+    Returns:
+        True if created, False if username already exists
+    """
+    try:
+        users = load_users()
+
+        if username in users:
+            logger.warning(f"Attempted to create existing user: {username}")
+            return False
+
+        # Hash with bcrypt BEFORE storing
+        password_hash = hash_password(password)
+
+        users[username] = {
+            'password_hash': password_hash,
+            'display_name': display_name,
+            'customers': ['ALL'],
+            'role': role
+        }
+
+        # Read full file, update users section, write back
+        with open(USERS_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        data['users'] = users
+
+        with open(USERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+
+        logger.info(f"User created: {username}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error creating user: {e}")
+        return False
+
+
+def delete_user(username: str) -> bool:
+    """
+    Delete a user from users.json.
+
+    Args:
+        username: Username to delete
+
+    Returns:
+        True if deleted, False if user doesn't exist or error
+    """
+    try:
+        users = load_users()
+
+        if username not in users:
+            logger.warning(f"Attempted to delete non-existent user: {username}")
+            return False
+
+        del users[username]
+
+        with open(USERS_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        data['users'] = users
+
+        with open(USERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+
+        logger.info(f"User deleted: {username}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error deleting user: {e}")
+        return False

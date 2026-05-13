@@ -408,6 +408,90 @@
       "success": true,
       "error": null,
       "top_source": "data/yaml/customerx-deployment.yaml"
+    },
+    {
+      "timestamp": "2026-05-13T10:15:54.968610",
+      "username": "alice",
+      "question": "What version is CustomerX running?",
+      "customer_scope": "ALL",
+      "answer_length": 81,
+      "num_sources": 3,
+      "latency_ms": 8401,
+      "success": true,
+      "error": null,
+      "top_source": "data/yaml/customerx-deployment.yaml"
+    },
+    {
+      "timestamp": "2026-05-13T10:16:05.728643",
+      "username": "alice",
+      "question": "Are there any known issues for CustomerX?",
+      "customer_scope": "ALL",
+      "answer_length": 232,
+      "num_sources": 3,
+      "latency_ms": 6691,
+      "success": true,
+      "error": null,
+      "top_source": "data/markdown/customerX_architecture.md"
+    },
+    {
+      "timestamp": "2026-05-13T10:16:39.717554",
+      "username": "alice",
+      "question": "how about the customer Yaris deployments?",
+      "customer_scope": "ALL",
+      "answer_length": 127,
+      "num_sources": 3,
+      "latency_ms": 5417,
+      "success": true,
+      "error": null,
+      "top_source": "data/yaml/customerx-deployment.yaml"
+    },
+    {
+      "timestamp": "2026-05-13T10:17:00.180012",
+      "username": "alice",
+      "question": "okay then how about the cutomerY ?",
+      "customer_scope": "ALL",
+      "answer_length": 561,
+      "num_sources": 3,
+      "latency_ms": 3184,
+      "success": true,
+      "error": null,
+      "top_source": "data/yaml/customerx-deployment.yaml"
+    },
+    {
+      "timestamp": "2026-05-13T10:31:28.866565",
+      "username": "alice",
+      "question": "What version is CustomerX running?",
+      "customer_scope": "ALL",
+      "answer_length": 81,
+      "num_sources": 3,
+      "latency_ms": 7262,
+      "success": true,
+      "error": null,
+      "top_source": "data/yaml/customerx-deployment.yaml"
+    },
+    {
+      "timestamp": "2026-05-13T10:37:23.289976",
+      "username": "alice",
+      "question": "what is the cutomer y deploymnet details u have ?",
+      "customer_scope": "ALL",
+      "answer_length": 444,
+      "num_sources": 3,
+      "latency_ms": 4224,
+      "success": true,
+      "error": null,
+      "top_source": "data/yaml/customerx-deployment.yaml"
+    },
+    {
+      "timestamp": "2026-05-13T11:19:14.828281",
+      "username": "alice",
+      "question": "Are there any known issues for CustomerX?",
+      "customer_scope": "ALL",
+      "answer_length": 243,
+      "num_sources": 3,
+      "latency_ms": 10915,
+      "success": true,
+      "error": null,
+      "top_source": "data/markdown/customerX_architecture.md"
     }
   ]
 }

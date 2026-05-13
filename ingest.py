@@ -93,15 +93,20 @@ def load_markdown_documents():
         print(f'No markdown folder found at {MARKDOWN_DIR}, skipping.')
         return []
 
-    loader = DirectoryLoader(
-        MARKDOWN_DIR,
-        glob='**/*.md',
-        loader_cls=TextLoader,
-        show_progress=True
-    )
-    docs = loader.load()
-    print(f'Loaded {len(docs)} markdown files')
-    return docs
+    try:
+        loader = DirectoryLoader(
+            MARKDOWN_DIR,
+            glob='**/*.md',
+            loader_cls=TextLoader,
+            show_progress=True
+        )
+        docs = loader.load()
+        print(f'Loaded {len(docs)} markdown files')
+        return docs
+    
+    except Exception as e:
+        print(f'ERROR loading markdown files: {e}')
+        return []
 
 # ── Helper: Load PDF files ───────────────────────────────
 def load_pdf_documents():
