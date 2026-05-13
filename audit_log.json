@@ -95,6 +95,39 @@
         "role": "sre",
         "method": "password"
       }
+    },
+    {
+      "timestamp": "2026-05-13T14:08:46.610548",
+      "event_type": "LOGIN_SUCCESS",
+      "username": "admin",
+      "ip_address": null,
+      "success": true,
+      "details": {
+        "role": "admin",
+        "method": "password"
+      }
+    },
+    {
+      "timestamp": "2026-05-13T14:28:35.670420",
+      "event_type": "LOGIN_SUCCESS",
+      "username": "admin",
+      "ip_address": null,
+      "success": true,
+      "details": {
+        "role": "admin",
+        "method": "password"
+      }
+    },
+    {
+      "timestamp": "2026-05-13T14:34:43.936812",
+      "event_type": "LOGIN_SUCCESS",
+      "username": "admin",
+      "ip_address": null,
+      "success": true,
+      "details": {
+        "role": "admin",
+        "method": "password"
+      }
     }
   ]
 }

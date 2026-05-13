@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: wso2-api-manager-service
+  namespace: customerx
+  labels:
+    customer: CustomerX
+    app: api-manager
+spec:
+  selector:
+    app: api-manager
+  ports:
+  - name: https-management
+    port: 9443
+    targetPort: 9443
+    protocol: TCP
+  - name: https-gateway
+    port: 8243
+    targetPort: 8243
+    protocol: TCP
+  - name: http-gateway
+    port: 8280
+    targetPort: 8280
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wso2-api-manager-ingress
+  namespace: customerx
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+  labels:
+    customer: CustomerX
+spec:
+  tls:
+  - hosts:
+    - customerx.wso2-sre.internal
+    secretName: customerx-tls-secret
+  rules:
+  - host: customerx.wso2-sre.internal
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: wso2-api-manager-service
+            port:
+              number: 9443
