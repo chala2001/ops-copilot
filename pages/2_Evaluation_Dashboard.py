@@ -17,7 +17,7 @@ st.set_page_config(
     layout='wide'
 )
 
-from auth_guard import require_authentication
+from auth.auth_guard import require_authentication
 user_info = require_authentication()
 
 # ── Page content ──────────────────────────────────────────

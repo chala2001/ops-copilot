@@ -4,7 +4,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from logger import load_log
+from monitoring.logger import load_log
 
 st.set_page_config(
     page_title='Usage Dashboard',
@@ -12,7 +12,7 @@ st.set_page_config(
     layout='wide'
 )
 
-from auth_guard import require_authentication
+from auth.auth_guard import require_authentication
 user_info = require_authentication()
 
 # ── Page content ──────────────────────────────────────────

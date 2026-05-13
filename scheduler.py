@@ -6,7 +6,7 @@
 # from apscheduler.schedulers.blocking import BlockingScheduler
 # from apscheduler.triggers.interval import IntervalTrigger
 # from datetime import datetime
-# from ingest import run_ingestion
+# from core.ingest import run_ingestion
 
 # def scheduled_ingest():
 #     '''Function called on each scheduled run.'''
@@ -66,7 +66,7 @@ except ImportError as e:
     sys.exit(1)
 
 try:
-    from ingest import run_ingestion
+    from core.ingest import run_ingestion
 except ImportError as e:
     logger.error(f"Cannot import ingest module: {e}")
     print("❌ ingest.py not found or has errors")
