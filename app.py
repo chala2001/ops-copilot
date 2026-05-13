@@ -229,14 +229,22 @@ user_input = st.chat_input('Ask about any customer deployment...')
 # Use prefilled question OR actual user input
 prompt = prefilled or user_input
 
-# ── Process New Question ──────────────────────────────────
+
+
+# UPDATED CODE — add rate limit check before any Gemini API call:
 if prompt:
-    # ═══════════════════════════════════════════════════════
-    # MODIFIED: Remove customer scope validation
-    # Everyone searches all documents automatically
-    # ═══════════════════════════════════════════════════════
-    # REMOVED: Customer scope check
-    # ═══════════════════════════════════════════════════════
+    # ── Rate limit check ───────────────────────────────────
+    # Check BEFORE displaying the user's question or calling Gemini.
+    # If blocked, show an error and stop — no API call is made.
+    from rate_limiter import check_query_rate_limit
+
+    query_allowed, rate_message = check_query_rate_limit(current_user)
+
+    if not query_allowed:
+        st.error(rate_message)
+        st.info('💡 Rate limits ensure fair API usage across the team.')
+        st.stop()
+    # ──────────────────────────────────────────────────────
 
     # 1. Display the user's question
     with st.chat_message('user'):
