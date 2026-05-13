@@ -314,12 +314,13 @@ def clear_collection():
     count = collection.count()
     print(f'Clearing {count} chunks from ChromaDB...')
 
-    chroma_client.delete_collection(COLLECTION_NAME)
-    collection = chroma_client.create_collection(
-        name=COLLECTION_NAME,
-        metadata={'hnsw:space': 'cosine'}
-    )
-    print('Collection cleared and recreated.')
+    if count > 0:
+        # Delete all documents by their IDs — keeps the collection object intact
+        all_ids = collection.get()['ids']
+        if all_ids:
+            collection.delete(ids=all_ids)
+
+    print(f'Collection cleared. Now has {collection.count()} chunks.')
 
 # ── Main Function ─────────────────────────────────────────
 def run_ingestion():

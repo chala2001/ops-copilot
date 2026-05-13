@@ -492,6 +492,42 @@
       "success": true,
       "error": null,
       "top_source": "data/markdown/customerX_architecture.md"
+    },
+    {
+      "timestamp": "2026-05-13T13:30:14.705777",
+      "username": "admin",
+      "question": "Are there any known issues for CustomerX?",
+      "customer_scope": "ALL",
+      "answer_length": 244,
+      "num_sources": 3,
+      "latency_ms": 4093,
+      "success": true,
+      "error": null,
+      "top_source": "data/markdown/customerX_architecture.md"
+    },
+    {
+      "timestamp": "2026-05-13T13:31:04.966445",
+      "username": "admin",
+      "question": "What version is CustomerX running?",
+      "customer_scope": "ALL",
+      "answer_length": 81,
+      "num_sources": 3,
+      "latency_ms": 3327,
+      "success": true,
+      "error": null,
+      "top_source": "data/yaml/customerx-deployment.yaml"
+    },
+    {
+      "timestamp": "2026-05-13T13:31:54.732856",
+      "username": "admin",
+      "question": "is any detail about cutomer A ?",
+      "customer_scope": "ALL",
+      "answer_length": 124,
+      "num_sources": 3,
+      "latency_ms": 1838,
+      "success": true,
+      "error": null,
+      "top_source": "data/yaml/customerx-deployment.yaml"
     }
   ]
 }
