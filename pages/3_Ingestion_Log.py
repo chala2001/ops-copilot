@@ -21,14 +21,19 @@ user_info = require_authentication()
 st.title('📥 Ingestion Log')
 st.caption('Document ingestion status and history')
 
-STATE_FILE = 'ingestion_state.json'
+# Project root is two levels up from this file (pages/3_Ingestion_Log.py → pages/ → project root)
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+VENV_PYTHON = PROJECT_ROOT / 'venv' / 'bin' / 'python3'
+PYTHON_EXE = str(VENV_PYTHON) if VENV_PYTHON.exists() else sys.executable
 
-if not os.path.exists(STATE_FILE):
+STATE_FILE = PROJECT_ROOT / 'ingestion_state.json'
+
+if not STATE_FILE.exists():
     st.info('No ingestion has run yet.')
     st.code('python ingest.py', language='bash')
     st.stop()
 
-with open(STATE_FILE) as f:
+with open(str(STATE_FILE)) as f:
     state = json.load(f)
 
 last_run = datetime.fromisoformat(state['last_run'])
@@ -67,11 +72,11 @@ with col_a:
                 import subprocess
 
                 result = subprocess.run(
-                    [sys.executable, 'ingest.py'],
+                    [PYTHON_EXE, 'ingest.py'],
                     capture_output=True,
                     text=True,
                     timeout=120,
-                    cwd=os.getcwd()
+                    cwd=str(PROJECT_ROOT)
                 )
 
                 if result.returncode == 0:
@@ -96,11 +101,11 @@ with col_b:
                 import subprocess
 
                 result = subprocess.run(
-                    [sys.executable, 'ingest.py', '--clear'],
+                    [PYTHON_EXE, 'ingest.py', '--clear'],
                     capture_output=True,
                     text=True,
                     timeout=120,
-                    cwd=os.getcwd()
+                    cwd=str(PROJECT_ROOT)
                 )
 
                 if result.returncode == 0:

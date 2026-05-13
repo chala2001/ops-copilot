@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wso2-gateway
+  namespace: customerz
+  labels:
+    customer: CustomerZ
+    app: wso2-gateway
+    version: "4.3.0"
+    component: gateway
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: wso2-gateway
+  template:
+    metadata:
+      labels:
+        app: wso2-gateway
+        version: "4.3.0"
+    spec:
+      containers:
+      - name: wso2am-gateway
+        image: wso2/wso2am-gateway:4.3.0
+        ports:
+        - containerPort: 8243
+          name: https-gateway
+        - containerPort: 8280
+          name: http-gateway
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2000m"
+          limits:
+            memory: "8Gi"
+            cpu: "4000m"
+        env:
+        - name: JAVA_OPTS
+          value: "-Xms3072m -Xmx6144m -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
+        - name: CP_ENDPOINT
+          value: "https://wso2am-cp-service.customerz.svc.cluster.local:9443"
+        livenessProbe:
+          httpGet:
+            path: /services/Version
+            port: 9763
+          initialDelaySeconds: 150
+          periodSeconds: 30
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /services/Version
+            port: 9763
+          initialDelaySeconds: 120
+          periodSeconds: 15
+      nodeSelector:
+        agentpool: highperf
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wso2-controlplane
+  namespace: customerz
+  labels:
+    customer: CustomerZ
+    app: wso2-controlplane
+    version: "4.3.0"
+    component: control-plane
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: wso2-controlplane
+  template:
+    metadata:
+      labels:
+        app: wso2-controlplane
+        version: "4.3.0"
+    spec:
+      containers:
+      - name: wso2am
+        image: wso2/wso2am:4.3.0
+        ports:
+        - containerPort: 9443
+          name: https-management
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"

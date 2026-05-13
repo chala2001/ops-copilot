@@ -31,6 +31,14 @@
         "ALL"
       ],
       "role": "sre"
+    },
+    "samith": {
+      "password_hash": "$2b$12$kLAelV6hKFz8gmqRfMQTKOgH5xETmtjeYrFf4fQE3rIYcBuj5Wa2K",
+      "display_name": "Samith(Intern)",
+      "customers": [
+        "ALL"
+      ],
+      "role": "sre"
     }
   }
 }

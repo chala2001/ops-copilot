@@ -1,0 +1,10 @@
+[server]
+enableCORS = false
+enableXsrfProtection = true
+headless = true
+port = 8501
+sslCertFile = "certs/cert.pem"
+sslKeyFile = "certs/key.pem"
+
+[browser]
+gatherUsageStats = false

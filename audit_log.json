@@ -20,6 +20,114 @@
       "details": {
         "reason": "wrong_password"
       }
+    },
+    {
+      "timestamp": "2026-05-13T13:17:42.918049",
+      "event_type": "LOGIN_SUCCESS",
+      "username": "admin",
+      "ip_address": null,
+      "success": true,
+      "details": {
+        "role": "admin",
+        "method": "password"
+      }
+    },
+    {
+      "timestamp": "2026-05-13T13:19:38.349070",
+      "event_type": "LOGIN_SUCCESS",
+      "username": "admin",
+      "ip_address": null,
+      "success": true,
+      "details": {
+        "role": "admin",
+        "method": "password"
+      }
+    },
+    {
+      "timestamp": "2026-05-13T13:26:13.891559",
+      "event_type": "LOGIN_SUCCESS",
+      "username": "admin",
+      "ip_address": null,
+      "success": true,
+      "details": {
+        "role": "admin",
+        "method": "password"
+      }
+    },
+    {
+      "timestamp": "2026-05-13T13:29:58.643504",
+      "event_type": "LOGIN_SUCCESS",
+      "username": "admin",
+      "ip_address": null,
+      "success": true,
+      "details": {
+        "role": "admin",
+        "method": "password"
+      }
+    },
+    {
+      "timestamp": "2026-05-13T13:33:06.998129",
+      "event_type": "LOGIN_FAILED",
+      "username": "Samith",
+      "ip_address": null,
+      "success": false,
+      "details": {
+        "reason": "user_not_found"
+      }
+    },
+    {
+      "timestamp": "2026-05-13T13:33:08.558660",
+      "event_type": "LOGIN_FAILED",
+      "username": "Samith",
+      "ip_address": null,
+      "success": false,
+      "details": {
+        "reason": "user_not_found"
+      }
+    },
+    {
+      "timestamp": "2026-05-13T13:33:20.375757",
+      "event_type": "LOGIN_SUCCESS",
+      "username": "samith",
+      "ip_address": null,
+      "success": true,
+      "details": {
+        "role": "sre",
+        "method": "password"
+      }
+    },
+    {
+      "timestamp": "2026-05-13T14:08:46.610548",
+      "event_type": "LOGIN_SUCCESS",
+      "username": "admin",
+      "ip_address": null,
+      "success": true,
+      "details": {
+        "role": "admin",
+        "method": "password"
+      }
+    },
+    {
+      "timestamp": "2026-05-13T14:28:35.670420",
+      "event_type": "LOGIN_SUCCESS",
+      "username": "admin",
+      "ip_address": null,
+      "success": true,
+      "details": {
+        "role": "admin",
+        "method": "password"
+      }
+    },
+    {
+      "timestamp": "2026-05-13T14:34:43.936812",
+      "event_type": "LOGIN_SUCCESS",
+      "username": "admin",
+      "ip_address": null,
+      "success": true,
+      "details": {
+        "role": "admin",
+        "method": "password"
+      }
     }
   ]
 }
