@@ -1,5 +1,6 @@
 # LLM and AI
 google-generativeai
+google-genai
 anthropic
 openai
 
@@ -30,3 +31,6 @@ apscheduler
 
 # YAML support
 pyyaml
+
+# Security — bcrypt for password hashing (replaces hashlib SHA-256)
+bcrypt>=4.1.2

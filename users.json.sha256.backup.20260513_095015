@@ -1,7 +1,7 @@
 {
   "users": {
     "alice": {
-      "password_hash": "$2b$12$4fzFhO.q8el8cASDithqFeAU0EO5Cjg76G7NdMKpp27J1QYEYMuve",
+      "password_hash": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
       "display_name": "Alice (Senior SRE)",
       "customers": [
         "ALL"
@@ -9,7 +9,7 @@
       "role": "senior_sre"
     },
     "carol": {
-      "password_hash": "$2b$12$7JKLdxJ1AV1SUKomj11b1ec.Xl9gPl5GqUV6EL6Z7duPSB.nOZ5Yu",
+      "password_hash": "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8",
       "display_name": "Carol (SRE)",
       "customers": [
         "ALL"
@@ -17,7 +17,7 @@
       "role": "sre"
     },
     "admin": {
-      "password_hash": "$2b$12$NEMkyADvvMZMllCkkE/yVeTdwAS0G1pj64h2gC9.JJer62ltflrd6",
+      "password_hash": "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918",
       "display_name": "Admin",
       "customers": [
         "ALL"
@@ -25,7 +25,7 @@
       "role": "admin"
     },
     "chalaka": {
-      "password_hash": "$2b$12$pk6IU8jCpjrN0zjjJtz.4.rp2s89gsR6CdXq4RJmu6UEj1z6ebqrK",
+      "password_hash": "716426738ba398dfafe35bc7621ee973c46ba42288229e3552953ce6bd35dac2",
       "display_name": "Chalaka",
       "customers": [
         "ALL"

@@ -1,11 +1,12 @@
 # app.py
 # ── SRE Ops Copilot — Streamlit Chat Interface ──────────
 # Run with: streamlit run app.py
- 
+
 import streamlit as st
 from rag import ask, ask_stream, get_authorized_customers
 import time
 from logger import log_query
+from session_manager import check_session_timeout, init_session_tracking, logout_user
 
 
 # ── Page Configuration ────────────────────────────────────
@@ -40,6 +41,7 @@ if not st.session_state.authenticated:
             password = st.text_input('Password', type='password')
             submit = st.form_submit_button('Sign in', use_container_width=True)
 
+        # UPDATED CODE — add init_session_tracking() call on successful login:
         if submit:
             if not username or not password:
                 st.error('Please enter both username and password.')
@@ -48,16 +50,37 @@ if not st.session_state.authenticated:
                 if user_info:
                     st.session_state.authenticated = True
                     st.session_state.user_info = user_info
+                    # Start session timer immediately after login.
+                    # This records session_start and last_activity = now.
+                    init_session_tracking()
                     st.rerun()
                 else:
                     st.error('Incorrect username or password.')
-    
     st.stop()
-
 # ── From here down, user is authenticated ────────────────
 user_info = st.session_state.user_info
 current_user = user_info['username']
- 
+
+# Check session validity on every page load.
+# check_session_timeout() returns (True, "") if valid, or (False, message) if expired.
+# It also updates last_activity to now on every valid call — this is the heartbeat.
+session_valid, timeout_message = check_session_timeout()
+
+if not session_valid:
+    # Session expired — show message and clean up state
+    st.warning(timeout_message)
+    logout_user()
+
+    # Show re-login prompt
+    col_left, col_mid, col_right = st.columns([1, 2, 1])
+    with col_mid:
+        st.divider()
+        if st.button('🔒 Click here to log in again', type='primary', use_container_width=True):
+            st.rerun()
+    st.stop()
+
+
+
 # ── Custom CSS ────────────────────────────────────────────
 # Small style tweaks to make the UI cleaner.
 # Streamlit uses st.markdown with unsafe_allow_html=True for CSS.
@@ -80,18 +103,21 @@ st.markdown('''
 # Everything inside 'with st.sidebar:' appears in the left panel.
 from rag import collection  # import collection count
 st.sidebar.metric('Total knowledge chunks', collection.count())
+# UPDATED CODE — use logout_user() and add session info:
 with st.sidebar:
     st.title('SRE Ops Copilot')
     st.caption('AI-powered deployment knowledge base')
     st.divider()
- 
+
     # Show logged-in user
     st.success(f"✓ {user_info['display_name']}")
     if st.button('Sign out'):
-        st.session_state.authenticated = False
-        st.session_state.user_info = None
-        st.session_state.messages = []
+        logout_user()
         st.rerun()
+
+    # Show session countdown (optional — helps users know when they'll be logged out)
+    from session_manager import display_session_status
+    display_session_status()
     
     st.divider()
     
