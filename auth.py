@@ -131,29 +131,40 @@ def verify_password(password: str, stored_hash: str) -> bool:
         logger.error(f'Password verification error: {e}')
         return False
 
-
 def check_login(username: str, password: str) -> Optional[Dict]:
     """
     Verify username and password. Returns user info dict on success, None on failure.
 
-    Security notes:
-    - We do NOT reveal whether the username or password was wrong.
-      Both cases return None. This prevents username enumeration attacks.
-    - We call verify_password() even for unknown users to maintain
-      constant response time (prevents timing-based user enumeration).
-    - The returned dict NEVER includes the password_hash.
-
-    Args:
-        username: The username submitted in the login form
-        password: The plain-text password submitted in the login form
-
-    Returns:
-        dict with keys: username, display_name, customers, role
-        OR None if credentials are invalid
+    This version adds:
+    - Rate limiting: blocks login after 5 failed attempts per hour
+    - Audit logging: records every success and failure to audit_log.json
     """
+    # Import here to avoid circular imports at module load time.
+    # Both modules are only needed when check_login() is actually called,
+    # not at import time.
+    from audit_log import log_security_event, LOGIN_SUCCESS, LOGIN_FAILED
+    from rate_limiter import check_login_rate_limit, record_failed_login, reset_login_attempts
+
     try:
         if not username or not password:
             logger.warning("Login attempt with empty username or password")
+            return None
+
+        # ── Rate limit check (BEFORE loading users or checking password) ──
+        # This must come first to prevent attackers from bypassing the limit
+        # by providing different usernames (we track per-username).
+        rate_ok, rate_message = check_login_rate_limit(username)
+        if not rate_ok:
+            # Log the blocked attempt to the audit trail
+            log_security_event(
+                LOGIN_FAILED, username,
+                {'reason': 'rate_limited', 'message': rate_message},
+                success=False
+            )
+            # Return a generic error — don't expose the rate limit message
+            # to the UI directly (to avoid giving attackers information).
+            # app.py will show 'Incorrect username or password.' regardless.
+            logger.warning(f"Login blocked by rate limiter for: {username}")
             return None
 
         try:
@@ -167,33 +178,48 @@ def check_login(username: str, password: str) -> Optional[Dict]:
 
         if username not in users:
             logger.info(f"Login attempt for non-existent user: {username}")
-            # Still call verify_password with a dummy hash to keep response
-            # time consistent — prevents timing-based username enumeration.
+            # Record failure and log to audit trail
+            record_failed_login(username)
+            log_security_event(
+                LOGIN_FAILED, username,
+                {'reason': 'user_not_found'},
+                success=False
+            )
+            # Still run a dummy verify to maintain constant response time
             verify_password(password, "$2b$12$dummyhashfornon.existentuserXXXXXXXXXXXXXXXXXXXXXXXX")
             return None
 
         user = users[username]
 
-        if not isinstance(user, dict):
+        if not isinstance(user, dict) or 'password_hash' not in user:
             logger.error(f"Invalid user data structure for {username}")
-            return None
-
-        if 'password_hash' not in user:
-            logger.error(f"Missing password_hash for user {username}")
             return None
 
         stored_hash = user['password_hash']
 
-        # This is the key difference from the old SHA-256 code.
-        # Old code: hashlib.sha256(password.encode()).hexdigest() == stored_hash
-        # New code: bcrypt.checkpw() — handles salt, iterations, constant-time
         if not verify_password(password, stored_hash):
             logger.info(f"Failed login attempt for user: {username}")
+            # Record failure for rate limiting AND audit trail
+            record_failed_login(username)
+            log_security_event(
+                LOGIN_FAILED, username,
+                {'reason': 'wrong_password'},
+                success=False
+            )
             return None
 
+        # ── Successful login ───────────────────────────────
         logger.info(f"Successful login for user: {username}")
+        # Clear the failed login counter so they don't get locked out
+        # in future sessions after previously failing attempts.
+        reset_login_attempts(username)
+        # Record success in audit trail
+        log_security_event(
+            LOGIN_SUCCESS, username,
+            {'role': user.get('role', 'sre'), 'method': 'password'},
+            success=True
+        )
 
-        # Return safe user info — never include the password_hash itself.
         return {
             'username':     username,
             'display_name': user.get('display_name', username),
@@ -204,8 +230,6 @@ def check_login(username: str, password: str) -> Optional[Dict]:
     except Exception as e:
         logger.error(f"Unexpected error in check_login: {e}")
         return None
-
-
 def get_user_customers(username: str) -> list:
     """Get the list of customers a user can access."""
     try:

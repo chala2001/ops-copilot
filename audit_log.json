@@ -1,0 +1,25 @@
+{
+  "events": [
+    {
+      "timestamp": "2026-05-13T11:44:12.606213",
+      "event_type": "LOGIN_SUCCESS",
+      "username": "alice",
+      "ip_address": null,
+      "success": true,
+      "details": {
+        "method": "password",
+        "role": "senior_sre"
+      }
+    },
+    {
+      "timestamp": "2026-05-13T11:44:12.606922",
+      "event_type": "LOGIN_FAILED",
+      "username": "attacker",
+      "ip_address": null,
+      "success": false,
+      "details": {
+        "reason": "wrong_password"
+      }
+    }
+  ]
+}
