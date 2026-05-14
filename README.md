@@ -23,6 +23,7 @@
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
 - [Quick Start](#quick-start)
+- [Running with Docker](#running-with-docker)
 - [Configuration](#configuration)
 - [Document Ingestion](#document-ingestion)
 - [Security Features](#security-features)
@@ -361,6 +362,164 @@ streamlit run app.py
 ```
 
 Open **`https://localhost:8501`** — accept the self-signed certificate warning in the browser.
+
+---
+
+## Running with Docker
+
+The project is fully containerised. One command brings up the entire stack — Streamlit app, PostgreSQL database, and the background scheduler — on **any machine that has Docker installed**. No Python virtualenv, no system packages, no manual database setup. This is the recommended path for both teammates trying the project locally and for deployment to a cloud VM.
+
+### Why Docker for this project?
+
+| Without Docker | With Docker |
+|---|---|
+| Install Python 3.10+, pip, system libs | Install Docker only |
+| Manage virtualenvs per machine | Identical runtime everywhere |
+| Set up PostgreSQL manually (apt, config, users) | Postgres starts automatically with the right schema |
+| "Works on my laptop" surprises | Same image runs on dev laptop, server, Azure VM |
+| Background scheduler runs as a side process | Scheduler is its own container, restarts automatically |
+
+### Architecture — three containers
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                          docker compose                             │
+│                                                                     │
+│  ┌──────────────────────┐    ┌──────────────────────┐               │
+│  │  ops-copilot-app     │    │ ops-copilot-scheduler│               │
+│  │  (Streamlit, HTTPS)  │    │  (APScheduler loop)  │               │
+│  │  port 8501 ───►host  │    │  no exposed port     │               │
+│  └──────────┬───────────┘    └──────────┬───────────┘               │
+│             │ DB queries                │ DB queries                │
+│             ▼                           ▼                           │
+│        ┌───────────────────────────────────────┐                    │
+│        │       ops-copilot-postgres            │                    │
+│        │       (PostgreSQL 16-alpine)          │                    │
+│        │       port 5432 ───►host              │                    │
+│        │       volume: postgres_data           │                    │
+│        └───────────────────────────────────────┘                    │
+└─────────────────────────────────────────────────────────────────────┘
+       │                                  │
+       ▼                                  ▼
+  Bind mounts:                       Named volume:
+  ./data, ./chroma_db,               postgres_data  (survives down,
+  ./certs, ./.env,                                    wiped only by
+  ./ingestion_state.json                              down -v)
+  ./evaluation_results.json
+```
+
+| Container | Image | Port (host) | Role |
+|---|---|---|---|
+| `ops-copilot-postgres` | postgres:16-alpine | 5432 | Stores users, audit log, query log |
+| `ops-copilot-app` | built from Dockerfile | 8501 | Streamlit UI over HTTPS |
+| `ops-copilot-scheduler` | built from Dockerfile | — | Background auto-ingestion job |
+
+The app waits for postgres to report a healthy `pg_isready` before it starts — no "connection refused" errors on first boot.
+
+### Prerequisites
+
+- **Docker Desktop** (Windows/macOS) or **Docker Engine + Compose plugin** (Linux). Verify with `docker --version` and `docker compose version`.
+- **`.env`** file in the project root containing at minimum `GOOGLE_API_KEY=...` (see [Configuration](#configuration)).
+- **`certs/cert.pem` and `certs/key.pem`** for HTTPS (generate with the `openssl` command in [Quick Start](#quick-start) step 5).
+
+### Start everything
+
+```bash
+docker compose up --build -d
+```
+
+| Flag | What it does |
+|---|---|
+| `up` | Create and start the containers defined in `docker-compose.yml` |
+| `--build` | Rebuild the app image first (use whenever source code changed) |
+| `-d` | Detached — run in the background, free your terminal |
+
+First run takes **3-6 minutes** (downloads ~250 MB of base images, then `pip install`s every Python library inside the container). Every subsequent run is **~30 seconds** because Docker reuses cached layers.
+
+Once it's up, open **`https://localhost:8501`** and sign in.
+
+### One-time data migration  (only if you had JSON files before)
+
+If the project previously stored users / audit log / query log in JSON files, run this **once** to copy that data into PostgreSQL:
+
+```bash
+docker compose exec app python migrate_json_to_pg.py
+```
+
+After this completes, the JSON files are no longer used — everything reads and writes through the `postgres` container.
+
+### Common commands
+
+| Command | What it does |
+|---|---|
+| `docker compose up -d` | Start everything in the background |
+| `docker compose down` | Stop everything. **Data is preserved** in the postgres volume. |
+| `docker compose down -v` | Stop AND wipe the postgres volume. ⚠️ Destroys all users / audit log / query log. |
+| `docker compose ps` | List running containers and their health status |
+| `docker compose logs -f app` | Stream live logs from the Streamlit container |
+| `docker compose logs -f postgres` | Stream Postgres logs (useful when debugging connection errors) |
+| `docker compose restart app` | Restart one container — does **not** reload source code, only re-runs the existing image |
+| `docker compose up --build -d app` | Rebuild and restart the app container — **use this after editing Python files** |
+| `docker compose exec postgres psql -U ops_user -d ops_copilot` | Open a SQL shell directly inside the database |
+
+### Why you need `--build` after a code change
+
+The Dockerfile uses `COPY . .` to bake the source code into the image at build time. The `pages/`, `auth.py`, `app.py`, etc. inside the container are **frozen snapshots** taken when the image was built — they are not live-mounted from your host.
+
+So:
+- Editing `app.py` on the host → restart alone does nothing, you must rebuild.
+- Editing files in `./data/` or `./chroma_db/` → those **are** bind-mounted, changes are visible immediately.
+
+### What persists vs what gets wiped
+
+| File / Location | Type | Survives `down`? | Survives `down -v`? |
+|---|---|---|---|
+| `postgres_data` (named volume) | DB tables (users, audit, query log) | ✅ Yes | ❌ Wiped |
+| `./data/` | Source documents | ✅ Yes (bind mount) | ✅ Yes |
+| `./chroma_db/` | Vector store | ✅ Yes (bind mount) | ✅ Yes |
+| `./ingestion_state.json` | File hash tracking | ✅ Yes (bind mount) | ✅ Yes |
+| `./certs/`, `./.env` | Config | ✅ Yes (bind mount) | ✅ Yes |
+
+Rule of thumb: **only `down -v` is destructive.** Everything else is safe.
+
+### Inspecting the database from the host
+
+The postgres port `5432` is published, so any standard tool — `psql`, DBeaver, pgAdmin — can connect from your host machine:
+
+```
+Host:      localhost
+Port:      5432
+Database:  ops_copilot
+Username:  ops_user
+Password:  ops_password
+```
+
+Or open `psql` straight inside the container (no client needed on the host):
+
+```bash
+docker compose exec postgres psql -U ops_user -d ops_copilot
+```
+
+Useful inspection queries:
+
+```sql
+SELECT username, role FROM users;
+SELECT COUNT(*) FROM query_log;
+SELECT timestamp, event_type, username FROM audit_log ORDER BY timestamp DESC LIMIT 20;
+```
+
+### Deploying the same stack to another machine
+
+Because everything runs in containers, the deployment story is unusually simple:
+
+```
+1. Clone the repo on the target machine
+2. Copy your .env file across   (never commit this — it has the API key)
+3. Generate or copy certs/cert.pem + certs/key.pem
+4. docker compose up --build -d
+```
+
+That's the entire deployment. Same on a teammate's laptop, same on an Azure VM, same on a Raspberry Pi. The container guarantees byte-for-byte identical runtime behaviour, which is the whole point.
 
 ---
 
