@@ -984,6 +984,54 @@
       "success": false,
       "error": "503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}",
       "top_source": null
+    },
+    {
+      "timestamp": "2026-05-13T16:11:43.900137",
+      "username": "samith",
+      "question": "What version is CustomerX running?",
+      "customer_scope": "ALL",
+      "answer_length": 81,
+      "num_sources": 5,
+      "latency_ms": 2353,
+      "success": true,
+      "error": null,
+      "top_source": "data/yaml/customerx-deployment.yaml"
+    },
+    {
+      "timestamp": "2026-05-13T16:20:36.896388",
+      "username": "samith",
+      "question": "What version of WSO2 API Manager is CustomerX running? ",
+      "customer_scope": "ALL",
+      "answer_length": 52,
+      "num_sources": 5,
+      "latency_ms": 2645,
+      "success": true,
+      "error": null,
+      "top_source": "data/yaml/customery-deployment.yaml"
+    },
+    {
+      "timestamp": "2026-05-13T16:21:00.795794",
+      "username": "samith",
+      "question": "customerA what are the version?",
+      "customer_scope": "ALL",
+      "answer_length": 70,
+      "num_sources": 5,
+      "latency_ms": 3105,
+      "success": true,
+      "error": null,
+      "top_source": "data/markdown/customerZ_architecture.md"
+    },
+    {
+      "timestamp": "2026-05-13T16:21:27.967799",
+      "username": "samith",
+      "question": "What is the known issue SRE-1042 and how do I fix it?",
+      "customer_scope": "ALL",
+      "answer_length": 1001,
+      "num_sources": 5,
+      "latency_ms": 5291,
+      "success": true,
+      "error": null,
+      "top_source": "data/markdown/general_sre_procedures.md"
     }
   ]
 }

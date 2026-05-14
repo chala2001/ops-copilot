@@ -39,6 +39,14 @@
         "ALL"
       ],
       "role": "sre"
+    },
+    "admin1": {
+      "password_hash": "$2b$12$.EC1oMDrc2l6xVChyFtsnuCO0KpgTEpiG/z0/WrRo4rGvmohLJbOS",
+      "display_name": "Admin 1",
+      "customers": [
+        "ALL"
+      ],
+      "role": "admin"
     }
   }
 }
