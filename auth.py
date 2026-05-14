@@ -5,51 +5,43 @@
 # brute-force attacks computationally infeasible.
 
 import bcrypt
-import json
 import logging
-from pathlib import Path
 from typing import Optional, Dict
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-USERS_FILE = 'users.json'
+
 
 
 def load_users() -> dict:
     """
-    Load user data from users.json.
-
-    Returns the inner 'users' dict on success.
-    Raises FileNotFoundError or ValueError on bad file state.
-
-    This function is called on EVERY login attempt so it always
-    reads the latest users.json from disk — no caching. This means
-    you can add/remove users without restarting the app.
+    Load all users from the PostgreSQL database.
+    Returns the same dict format as before: {username: {password_hash, display_name, customers, role}}
+    so the rest of the code (check_login, admin panel) needs no changes.
     """
+    from db import get_db
     try:
-        if not Path(USERS_FILE).exists():
-            logger.error(f'{USERS_FILE} not found')
-            raise FileNotFoundError(
-                f'{USERS_FILE} not found. Create it with user credentials.'
-            )
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT username, password_hash, display_name, customers, role FROM users"
+                )
+                rows = cur.fetchall()
 
-        with open(USERS_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        return {
+            row[0]: {
+                'password_hash': row[1],
+                'display_name':  row[2] or row[0],
+                'customers':     list(row[3]) if row[3] else ['ALL'],
+                'role':          row[4] or 'sre',
+            }
+            for row in rows
+        }
 
-        if 'users' not in data:
-            logger.error(f'{USERS_FILE} missing "users" key')
-            raise ValueError(f'{USERS_FILE} has invalid format')
-
-        return data['users']
-
-    except json.JSONDecodeError as e:
-        logger.error(f'Invalid JSON in {USERS_FILE}: {e}')
-        raise ValueError(f'{USERS_FILE} contains invalid JSON')
     except Exception as e:
-        logger.error(f'Error loading users: {e}')
+        logger.error(f'Error loading users from database: {e}')
         raise
-
 
 def hash_password(password: str) -> str:
     """
@@ -230,70 +222,59 @@ def check_login(username: str, password: str) -> Optional[Dict]:
     except Exception as e:
         logger.error(f"Unexpected error in check_login: {e}")
         return None
+
+        
 def get_user_customers(username: str) -> list:
     """Get the list of customers a user can access."""
+    from db import get_db
     try:
-        users = load_users()
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT customers FROM users WHERE username = %s",
+                    (username,)
+                )
+                row = cur.fetchone()
 
-        if username not in users:
+        if row is None:
             logger.warning(f"User {username} not found when getting customers")
             return ['ALL']
 
-        customers = users[username].get('customers', ['ALL'])
-
-        if not isinstance(customers, list):
-            logger.warning(f"Invalid customers format for {username}")
-            return ['ALL']
-
-        return customers
+        customers = row[0]
+        return list(customers) if customers else ['ALL']
 
     except Exception as e:
         logger.error(f"Error getting customers for {username}: {e}")
         return ['ALL']
 
-
 def create_user(username: str, password: str, display_name: str, role: str = 'sre') -> bool:
     """
-    Create a new user and save to users.json.
-
-    This is called by the Admin Panel (pages/5_Admin_Panel.py).
-    The password is hashed with bcrypt before saving — the plain-text
-    password is NEVER stored anywhere.
-
-    Args:
-        username: Unique login name (no spaces)
-        password: Plain-text password (will be bcrypt-hashed immediately)
-        display_name: Full name shown in the UI
-        role: One of 'sre', 'senior_sre', 'admin'
-
-    Returns:
-        True if created, False if username already exists
+    Insert a new user into the PostgreSQL users table.
+    Returns True if created, False if username already exists.
     """
+    from db import get_db
     try:
-        users = load_users()
-
-        if username in users:
-            logger.warning(f"Attempted to create existing user: {username}")
-            return False
-
-        # Hash with bcrypt BEFORE storing
         password_hash = hash_password(password)
 
-        users[username] = {
-            'password_hash': password_hash,
-            'display_name': display_name,
-            'customers': ['ALL'],
-            'role': role
-        }
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO users (username, password_hash, display_name, customers, role)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (username) DO NOTHING
+                    RETURNING username
+                    """,
+                    (username, password_hash, display_name, ['ALL'], role)
+                )
+                result = cur.fetchone()
 
-        # Read full file, update users section, write back
-        with open(USERS_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-
-        data['users'] = users
-
-        with open(USERS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2)
+        # ON CONFLICT DO NOTHING means: if username already exists, skip silently.
+        # RETURNING username means: if a row WAS inserted, return it.
+        # If result is None, the username already existed (nothing was inserted).
+        if result is None:
+            logger.warning(f"Attempted to create existing user: {username}")
+            return False
 
         logger.info(f"User created: {username}")
         return True
@@ -302,33 +283,26 @@ def create_user(username: str, password: str, display_name: str, role: str = 'sr
         logger.error(f"Error creating user: {e}")
         return False
 
-
 def delete_user(username: str) -> bool:
     """
-    Delete a user from users.json.
-
-    Args:
-        username: Username to delete
-
-    Returns:
-        True if deleted, False if user doesn't exist or error
+    Delete a user from the PostgreSQL users table.
+    Returns True if deleted, False if user did not exist.
     """
+    from db import get_db
     try:
-        users = load_users()
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM users WHERE username = %s RETURNING username",
+                    (username,)
+                )
+                result = cur.fetchone()
 
-        if username not in users:
+        # RETURNING username gives us back the deleted row.
+        # If result is None, the user did not exist.
+        if result is None:
             logger.warning(f"Attempted to delete non-existent user: {username}")
             return False
-
-        del users[username]
-
-        with open(USERS_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-
-        data['users'] = users
-
-        with open(USERS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2)
 
         logger.info(f"User deleted: {username}")
         return True

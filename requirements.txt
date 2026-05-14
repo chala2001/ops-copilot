@@ -34,3 +34,6 @@ pyyaml
 
 # Security — bcrypt for password hashing (replaces hashlib SHA-256)
 bcrypt>=4.1.2
+
+# PostgreSQL driver — replaces file-based JSON storage
+psycopg2-binary>=2.9.0

@@ -1164,7 +1164,9 @@ Flag meanings:
 | `--build` | rebuild the app Docker image (picks up requirements.txt changes with psycopg2) |
 | `-d` | detach — run in background |
 
-Wait about 30–60 seconds for startup, then visit **http://localhost:8501**.
+Wait about 30–60 seconds for startup, then visit **https://localhost:8501**.
+
+> **Browser warning is normal:** Your browser will show a security warning like "Your connection is not private" because the SSL certificate is self-signed (not issued by a public authority like Let's Encrypt). This is expected for local development. Click **Advanced → Proceed to localhost** (or equivalent in your browser) to continue. This warning goes away when you deploy with a real domain and a trusted certificate.
 
 ### 11.8 — Test that everything works
 
@@ -1204,6 +1206,8 @@ docker compose ps
 ```
 
 The postgres row should show `healthy`. If it shows `starting`, wait another 10 seconds and check again. The `depends_on: condition: service_healthy` in the new `docker-compose.yml` should prevent this, but it can happen if something went wrong with the health check.
+
+> **Note on the health check URL:** The `app` service health check uses `http://localhost:8501/_stcore/health`. Streamlit's internal health endpoint responds on HTTP even when the main app is served over HTTPS — this is normal. Do not change the health check URL to https.
 
 **Common problem: `relation "users" does not exist`**
 

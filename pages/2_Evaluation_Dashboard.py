@@ -105,7 +105,7 @@ try:
                 except Exception:
                     return ''
 
-            styled = df.style.applymap(
+            styled = df.style.map(
                 color_score,
                 subset=['faithfulness', 'answer_relevancy']
             ).format({

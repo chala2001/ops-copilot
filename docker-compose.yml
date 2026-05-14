@@ -1,45 +1,81 @@
 services:
-  
+
+  # ── PostgreSQL Database Container ────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    # postgres:16 = latest stable long-term-support version
+    # alpine = uses a minimal Linux base (image is ~60MB instead of 250MB)
+    container_name: ops-copilot-postgres
+    environment:
+      POSTGRES_DB: ops_copilot       # creates this database on first startup
+      POSTGRES_USER: ops_user        # database login username
+      POSTGRES_PASSWORD: ops_password  # database login password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # postgres_data is a Docker-managed volume (defined at bottom of this file).
+      # Data stored here survives container restarts and rebuilds.
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      # Docker copies any .sql files in /docker-entrypoint-initdb.d/ and runs them
+      # on the FIRST startup only. This is how our tables get created automatically.
+    ports:
+      - '5432:5432'
+      # Exposes the database on your local machine at localhost:5432.
+      # This lets you connect with tools like DBeaver or pgAdmin for inspection.
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ops_user -d ops_copilot']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      # pg_isready checks if postgres is accepting connections.
+      # The app container will wait for 'healthy' status before starting.
+
+  # ── Streamlit Application ────────────────────────────────
   app:
     build: .
     container_name: ops-copilot-app
-    
     ports:
       - '8501:8501'
-    
     env_file:
       - .env
-    
     volumes:
       - ./data:/app/data
       - ./chroma_db:/app/chroma_db
-      - ./query_log.json:/app/query_log.json
       - ./ingestion_state.json:/app/ingestion_state.json
       - ./evaluation_results.json:/app/evaluation_results.json
-    
+      # Note: users.json, audit_log.json, query_log.json are NO LONGER mounted.
+      # Their data now lives in the postgres container's persistent volume.
     restart: unless-stopped
-    
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # The app won't start until postgres reports 'healthy'.
+      # This prevents "connection refused" errors during startup.
     healthcheck:
       test: ['CMD', 'curl', '-f', 'http://localhost:8501/_stcore/health']
       interval: 30s
       timeout: 10s
       retries: 3
-  
+
+  # ── Background Scheduler ─────────────────────────────────
   scheduler:
     build: .
     container_name: ops-copilot-scheduler
     command: python scheduler.py
-    
     env_file:
       - .env
-    
     volumes:
       - ./data:/app/data
       - ./chroma_db:/app/chroma_db
       - ./ingestion_state.json:/app/ingestion_state.json
-    
     restart: unless-stopped
-    
     depends_on:
-      app:
+      postgres:
         condition: service_healthy
+
+# ── Named Volumes ─────────────────────────────────────────
+# Docker manages this volume. Data inside survives 'docker compose down'.
+# It is only deleted if you run 'docker compose down -v' (the -v flag removes volumes).
+# Physical location on your machine: /var/lib/docker/volumes/<project>_postgres_data/
+volumes:
+  postgres_data:
