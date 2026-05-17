@@ -33,8 +33,21 @@ if not STATE_FILE.exists():
     st.code('python ingest.py', language='bash')
     st.stop()
 
-with open(str(STATE_FILE)) as f:
-    state = json.load(f)
+if not STATE_FILE.is_file():
+    st.error('Expected ingestion_state.json to be a file, but the path points to a directory.')
+    st.caption('Remove or rename the directory at ingestion_state.json, then run ingestion again.')
+    st.stop()
+
+try:
+    with open(str(STATE_FILE)) as f:
+        state = json.load(f)
+except json.JSONDecodeError:
+    st.error('The ingestion_state.json file is not valid JSON.')
+    st.caption('Delete or replace ingestion_state.json and re-run ingestion to recreate it.')
+    st.stop()
+except Exception as e:
+    st.error(f'Unable to read ingestion_state.json: {e}')
+    st.stop()
 
 last_run = datetime.fromisoformat(state['last_run'])
 
