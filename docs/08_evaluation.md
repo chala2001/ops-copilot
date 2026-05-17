@@ -53,7 +53,7 @@ Faithfulness = 3/4 = 0.75 (75%)
 **What a low score means:** Gemini is adding information not in your documents. This could be dangerous — an engineer might follow advice that isn't based on your actual deployment.
 
 **How to fix:**
-- Increase `TOP_K_RESULTS` in config.py (retrieve more context)
+- Increase `TOP_K_RESULTS` in core/config.py (retrieve more context)
 - Add more complete documents to your knowledge base
 - Make the system prompt stricter: "Do NOT add any information not explicitly in the context"
 
@@ -154,7 +154,7 @@ After it finishes, results are saved to `evaluation_results.json`:
 
 ---
 
-## The Evaluation Pipeline (evaluate.py)
+## The Evaluation Pipeline (monitoring/evaluate.py)
 
 ```python
 # 1. Ask each question through the RAG system

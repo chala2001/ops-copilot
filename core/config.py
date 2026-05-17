@@ -1,4 +1,4 @@
-# config.py
+# core/config.py
 # ── All project settings in one place ──────────────────
 import os
 from dotenv import load_dotenv

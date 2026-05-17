@@ -247,10 +247,10 @@ python -m pytest tests/test_auth.py -v
 ### Quick RAG test (from command line)
 
 ```bash
-python rag.py
+python core/rag.py
 ```
 
-This runs `test_rag()` at the bottom of rag.py, which asks a hardcoded test question and prints the answer.
+This runs `test_rag()` at the bottom of core/rag.py, which asks a hardcoded test question and prints the answer.
 
 ---
 

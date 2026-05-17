@@ -102,12 +102,12 @@ SRE Types Question
        │
        ▼
 Streamlit Web App (app.py)
-  ├── Login check (auth.py + bcrypt)
+  ├── Login check (auth/auth.py + bcrypt)
   ├── Session check (60 min timeout)
   └── Rate limit check (10 queries/min)
        │
        ▼
-RAG Engine (rag.py)
+RAG Engine (core/rag.py)
   ├── Convert question to vector (all-MiniLM-L6-v2, runs locally)
   ├── Search ChromaDB for top 5 similar chunks
   ├── Build prompt: system instructions + chunks + question
@@ -129,7 +129,7 @@ Audit Log + Query Log (audit_log.json + query_log.json)
 | Session timeout | 60 min inactive, 8 hr max | Abandoned sessions |
 | Query throttle | 10/min, 100/hr | API cost explosion |
 | Audit log | audit_log.json | Post-incident investigation |
-| Page guard | auth_guard.py | Unauthenticated page access |
+| Page guard | auth/auth_guard.py | Unauthenticated page access |
 | Role check | Admin Panel | Privilege escalation |
 
 ---

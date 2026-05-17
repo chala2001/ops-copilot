@@ -3,15 +3,11 @@
 # Run with: streamlit run app.py
 
 import streamlit as st
-from rag import ask, ask_stream, get_authorized_customers
+from core.rag import ask, ask_stream, get_authorized_customers
 import time
-from logger import log_query
-from session_manager import check_session_timeout, init_session_tracking, logout_user
+from monitoring.logger import log_query
+from auth.session_manager import check_session_timeout, init_session_tracking, logout_user
 
-
-# ── Page Configuration ────────────────────────────────────
-# MUST be the very first Streamlit command in the file.
-# layout='wide' uses the full browser width.
 st.set_page_config(
     page_title='SRE Ops Copilot',
     page_icon='🔍',
@@ -19,17 +15,15 @@ st.set_page_config(
     initial_sidebar_state='expanded'
 )
 
+from auth.auth import check_login, get_user_customers as auth_get_customers
 
-from auth import check_login, get_user_customers as auth_get_customers
-
-# ── Session State for Authentication ─────────────────────
+# ── Session State ─────────────────────────────────────────
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.user_info = None
 
 # ── Login Gate ────────────────────────────────────────────
 if not st.session_state.authenticated:
-    # Centre the login form
     col_left, col_mid, col_right = st.columns([1, 2, 1])
     with col_mid:
         st.title('🔍 SRE Ops Copilot')
@@ -41,7 +35,6 @@ if not st.session_state.authenticated:
             password = st.text_input('Password', type='password')
             submit = st.form_submit_button('Sign in', use_container_width=True)
 
-        # UPDATED CODE — add init_session_tracking() call on successful login:
         if submit:
             if not username or not password:
                 st.error('Please enter both username and password.')
@@ -50,28 +43,20 @@ if not st.session_state.authenticated:
                 if user_info:
                     st.session_state.authenticated = True
                     st.session_state.user_info = user_info
-                    # Start session timer immediately after login.
-                    # This records session_start and last_activity = now.
                     init_session_tracking()
                     st.rerun()
                 else:
                     st.error('Incorrect username or password.')
     st.stop()
-# ── From here down, user is authenticated ────────────────
+
+# ── Authenticated ─────────────────────────────────────────
 user_info = st.session_state.user_info
 current_user = user_info['username']
 
-# Check session validity on every page load.
-# check_session_timeout() returns (True, "") if valid, or (False, message) if expired.
-# It also updates last_activity to now on every valid call — this is the heartbeat.
 session_valid, timeout_message = check_session_timeout()
-
 if not session_valid:
-    # Session expired — show message and clean up state
     st.warning(timeout_message)
     logout_user()
-
-    # Show re-login prompt
     col_left, col_mid, col_right = st.columns([1, 2, 1])
     with col_mid:
         st.divider()
@@ -79,11 +64,7 @@ if not session_valid:
             st.rerun()
     st.stop()
 
-
-
 # ── Custom CSS ────────────────────────────────────────────
-# Small style tweaks to make the UI cleaner.
-# Streamlit uses st.markdown with unsafe_allow_html=True for CSS.
 st.markdown('''
 <style>
     .source-chip {
@@ -98,43 +79,28 @@ st.markdown('''
     }
 </style>
 ''', unsafe_allow_html=True)
- 
-# ── Sidebar ──────────────────────────────────────────────
-# Everything inside 'with st.sidebar:' appears in the left panel.
-from rag import collection  # import collection count
-st.sidebar.metric('Total knowledge chunks', collection.count())
-# UPDATED CODE — use logout_user() and add session info:
+
+# ── Sidebar ───────────────────────────────────────────────
+from core.rag import collection
+from auth.session_manager import display_session_status
+
 with st.sidebar:
     st.title('SRE Ops Copilot')
     st.caption('AI-powered deployment knowledge base')
     st.divider()
 
-    # Show logged-in user
     st.success(f"✓ {user_info['display_name']}")
     if st.button('Sign out'):
         logout_user()
         st.rerun()
 
-    # Show session countdown (optional — helps users know when they'll be logged out)
-    from session_manager import display_session_status
     display_session_status()
-    
+    st.metric('Knowledge chunks', collection.count())
     st.divider()
-    
-    # ═══════════════════════════════════════════════════════
-    # MODIFIED: Remove customer scope selector
-    # Everyone has full access to all documents
-    # ═══════════════════════════════════════════════════════
-    customer_scope = None  # None means search ALL documents
-    
-    # Show full access indicator
+
     st.info('🔓 **Full Access Mode**\nSearch across all customer documents')
-    # ═══════════════════════════════════════════════════════
- 
     st.divider()
- 
-    # ── Suggested Questions ──────────────────────────────
-    # Quick-start buttons for common queries.
+
     st.subheader('Try asking:')
     example_questions = [
         'What version is CustomerX running?',
@@ -144,140 +110,77 @@ with st.sidebar:
     ]
     for q in example_questions:
         if st.button(q, use_container_width=True, key=q):
-            # When clicked, add to session state as if user typed it
             st.session_state['prefilled_question'] = q
- 
+
     st.divider()
- 
-    # ── Clear Chat Button ────────────────────────────────
+
     if st.button('Clear conversation', use_container_width=True):
         st.session_state.messages = []
-        st.rerun()  # Force page refresh to clear the chat display
- 
-# ── Main Chat Area ───────────────────────────────────────
+        st.rerun()
+
+# ── Main Chat Area ────────────────────────────────────────
 st.header('SRE Knowledge Base')
-# ═══════════════════════════════════════════════════════
-# MODIFIED: Update caption to show full access
-# ═══════════════════════════════════════════════════════
 st.caption(f'Searching as: {current_user} | Access: All Customers')
-# ═══════════════════════════════════════════════════════
- 
- 
-# Add a footer with instructions ─────────────────────
-st.divider()
-st.caption(
-    'SRE Ops Copilot · Powered by Gemini · '
-    'Answers are grounded in retrieved documentation only.'
-)
 
-# ═══════════════════════════════════════════════════════
-# MODIFIED: Remove customer scope validation
-# No need to check - everyone has full access
-# ═══════════════════════════════════════════════════════
-# REMOVED: Customer scope warning check
-# ═══════════════════════════════════════════════════════
-
-# ── Session State Initialization ─────────────────────────
-# st.session_state is a dictionary that persists across reruns.
-# Streamlit reruns the ENTIRE script on every user interaction.
-# Without session_state, the chat history would vanish on every message.
 if 'messages' not in st.session_state:
     st.session_state.messages = []
- 
-# ── Display Welcome Message ──────────────────────────────
+
 if not st.session_state.messages:
     st.info(
         'Ask me anything about your customer deployments. '
         'I will search the knowledge base and cite my sources.'
     )
- 
-# ── Render All Chat History ──────────────────────────────
-# Loop through all previous messages and display them.
-# st.chat_message('user') shows a user avatar + bubble.
-# st.chat_message('assistant') shows an assistant avatar + bubble.
+
 for msg in st.session_state.messages:
     with st.chat_message(msg['role']):
         st.write(msg['content'])
- 
-        # Show source citations for assistant messages
+
         if msg['role'] == 'assistant' and msg.get('sources'):
             sources = msg['sources']
-            # Show top 3 sources as chips
             chips_html = ' '.join([
                 f'<span class="source-chip">{s["source"].split("/")[-1]}</span>'
                 for s in sources[:3]
             ])
             st.markdown(f'**Sources:** {chips_html}', unsafe_allow_html=True)
- 
-            # Show full details in a collapsible section
+
             with st.expander(f'View {len(sources)} source(s)'):
                 for i, src in enumerate(sources):
                     col1, col2, col3 = st.columns([3, 1, 1])
                     col1.text(src['source'])
                     col2.text(src['customer'])
                     col3.text(f"{src['similarity']:.0%} match")
- 
-# ── Handle Pre-filled Question (from sidebar buttons) ────
-# If a user clicked a suggested question, inject it
+
 prefilled = st.session_state.pop('prefilled_question', None)
- 
-# ── Chat Input Box ────────────────────────────────────────
-# st.chat_input renders a fixed input bar at the bottom.
-# It returns None until the user submits (press Enter or click Send).
 user_input = st.chat_input('Ask about any customer deployment...')
- 
-# Use prefilled question OR actual user input
 prompt = prefilled or user_input
 
-
-
-# UPDATED CODE — add rate limit check before any Gemini API call:
 if prompt:
-    # ── Rate limit check ───────────────────────────────────
-    # Check BEFORE displaying the user's question or calling Gemini.
-    # If blocked, show an error and stop — no API call is made.
-    from rate_limiter import check_query_rate_limit
+    from auth.rate_limiter import check_query_rate_limit
 
     query_allowed, rate_message = check_query_rate_limit(current_user)
-
     if not query_allowed:
         st.error(rate_message)
         st.info('💡 Rate limits ensure fair API usage across the team.')
         st.stop()
-    # ──────────────────────────────────────────────────────
 
-    # 1. Display the user's question
     with st.chat_message('user'):
         st.write(prompt)
 
-    # 2. Save user message to history
-    st.session_state.messages.append({
-        'role': 'user',
-        'content': prompt
-    })
+    st.session_state.messages.append({'role': 'user', 'content': prompt})
 
-    # 3. Call RAG and display answer with STREAMING + LOGGING
     with st.chat_message('assistant'):
-        # Streaming container
         sources_holder = []
-        
+
         def text_only_stream():
-            '''Wrapper to separate text from sources'''
-            # ═══════════════════════════════════════════════════════
-            # MODIFIED: Pass customer_scope=None for full access
-            # ═══════════════════════════════════════════════════════
             for piece in ask_stream(prompt, customer_scope=None):
-            # ═══════════════════════════════════════════════════════
                 if isinstance(piece, list):
                     sources_holder.extend(piece)
                 else:
                     yield piece
-        
-        # Record start time BEFORE calling the stream
+
         start_time = time.time()
-        
+
         try:
-            # Stream the answer word-by-word
             full_answer = st.write_stream(text_only_stream())
             success = True
             error_msg = None
@@ -286,31 +189,27 @@ if prompt:
             st.error(full_answer)
             success = False
             error_msg = str(e)
-        
-        # Record end time and calculate latency
-        end_time = time.time()
-        latency_ms = int((end_time - start_time) * 1000)
-        
+
+        latency_ms = int((time.time() - start_time) * 1000)
         sources = sources_holder
-        
-        # ═══════════════════════════════════════════════════════
-        # MODIFIED: Log with 'ALL' instead of customer list
-        # ═══════════════════════════════════════════════════════
+
         log_query(
             username=current_user,
             question=prompt,
-            customer_scope=['ALL'],  # Changed from customer_scope list
+            customer_scope=['ALL'],
             answer=full_answer,
             sources=sources,
             latency_ms=latency_ms,
             success=success,
             error=error_msg
         )
-        # ═══════════════════════════════════════════════════════
-        
-    # 4. Save assistant response to history
+
     st.session_state.messages.append({
         'role': 'assistant',
         'content': full_answer,
         'sources': sources
     })
+
+# ── Footer ────────────────────────────────────────────────
+st.divider()
+st.caption('SRE Ops Copilot · Powered by Gemini · Answers are grounded in retrieved documentation only.')

@@ -108,9 +108,9 @@ ChromaDB saves everything to `./chroma_db/` on disk. This persists across server
 
 ---
 
-## Phase 2: Query Answering (rag.py)
+## Phase 2: Query Answering (core/rag.py)
 
-This happens every time a user asks a question. The function `ask_stream()` in rag.py orchestrates all of this.
+This happens every time a user asks a question. The function `ask_stream()` in core/rag.py orchestrates all of this.
 
 ### Step 2.1 — Embed the Question
 
@@ -238,7 +238,7 @@ Imagine each document chunk as a point in space. When you ask a question, it's a
 
 ## The Config Values That Control RAG Quality
 
-In `config.py`:
+In `core/config.py`:
 
 | Setting | Value | Effect |
 |---------|-------|--------|

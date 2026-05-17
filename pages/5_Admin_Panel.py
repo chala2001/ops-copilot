@@ -5,8 +5,8 @@
 
 import streamlit as st
 from pathlib import Path
-from auth_guard import require_authentication
-from auth import create_user, delete_user, load_users
+from auth.auth_guard import require_authentication
+from auth.auth import create_user, delete_user, load_users
 
 st.set_page_config(
     page_title='Admin Panel',

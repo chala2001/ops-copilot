@@ -103,7 +103,7 @@ Here is exactly what happens when a user clicks "Sign in":
 
 ```python
 if submit:                               # user clicked the Sign in button
-    user_info = check_login(username, password)   # call auth.py
+    user_info = check_login(username, password)   # call auth/auth.py
     if user_info:
         st.session_state.authenticated = True     # mark as logged in
         st.session_state.user_info = user_info    # store their info
@@ -113,7 +113,7 @@ if submit:                               # user clicked the Sign in button
         st.error('Incorrect username or password.')  # same message for all failures
 ```
 
-### In auth.py — check_login():
+### In auth/auth.py — check_login():
 
 ```
 Step 1: Check if username or password fields are empty → return None
@@ -152,7 +152,7 @@ Step 6: Successful login!
 When someone types a username that doesn't exist, we still run a fake bcrypt verification:
 
 ```python
-# From auth.py:
+# From auth/auth.py:
 if username not in users:
     record_failed_login(username)
     log_security_event(LOGIN_FAILED, ...)
@@ -169,16 +169,16 @@ From timing alone, the attacker knows which usernames are valid. By always runni
 
 ---
 
-## How auth_guard.py Protects Dashboard Pages
+## How auth/auth_guard.py Protects Dashboard Pages
 
 Every dashboard page (Evaluation, Usage, Admin, Ingestion) starts with:
 
 ```python
-from auth_guard import require_authentication
+from auth.auth_guard import require_authentication
 user_info = require_authentication()
 ```
 
-`require_authentication()` in auth_guard.py does:
+`require_authentication()` in auth/auth_guard.py does:
 
 ```python
 def require_authentication():
@@ -237,7 +237,7 @@ success = create_user(
 )
 ```
 
-Inside `auth.py create_user()`:
+Inside `auth/auth.py create_user()`:
 
 ```python
 # 1. Hash the password with bcrypt IMMEDIATELY
@@ -279,6 +279,6 @@ This is intentional. For a small team tool, the slight performance cost of a fil
 
 ## The SHA-256 Backup
 
-You may notice `auth.py.sha256.backup` in the project. This is the old version of auth.py that used SHA-256 instead of bcrypt. It's kept as a backup reference but is not used. All passwords in `users.json` are now bcrypt hashes (you can tell because they start with `$2b$`).
+You may notice `auth.py.sha256.backup` in the project. This is the old version of auth/auth.py that used SHA-256 instead of bcrypt. It's kept as a backup reference but is not used. All passwords in `users.json` are now bcrypt hashes (you can tell because they start with `$2b$`).
 
 The migration from SHA-256 to bcrypt required recreating all passwords — the old SHA-256 hashes are not compatible with bcrypt verification.

@@ -1,4 +1,4 @@
-# rag.py
+# core/rag.py
 # ── RAG Query Engine ────────────────────────────────────
 # This module handles all queries:
 #   1. Embed the question
@@ -10,7 +10,7 @@
 from google import genai
 import chromadb
 from sentence_transformers import SentenceTransformer
-from config import (
+from core.config import (
     GOOGLE_API_KEY, LLM_MODEL, EMBEDDING_MODEL,
     CHROMA_PATH, COLLECTION_NAME, TOP_K_RESULTS
 )
@@ -46,20 +46,20 @@ def ask(question: str, customer_scope: list) -> tuple:
     '''
     Main RAG query function.
     '''
-    
+
     # ── Input validation ──────────────────────────────────
     if not question or not question.strip():
         return ('Please provide a question.', [])
-    
+
     if len(question) > 2000:
         return ('Question too long. Please keep it under 2000 characters.', [])
-    
+
     if not customer_scope:
         return ('No customer scope selected. Please select at least one customer.', [])
-    
+
     if collection.count() == 0:
         return ('The knowledge base is empty. Please run: python ingest.py', [])
-    
+
 
     # ── Step 1: Convert question to a vector ─────────────
     question_embedding = embedder.encode(question).tolist()
@@ -119,14 +119,14 @@ Answer based only on the context above:'''
 
     # ── Step 5: Call Gemini API with error handling ───────
     full_prompt = f"{system_prompt}\n\n{user_message}"
-    
+
     try:
         response = client.models.generate_content(
             model=LLM_MODEL,
             contents=full_prompt
         )
         answer = response.text
-    
+
     except Exception as e:
         # Catch Gemini API errors
         error_msg = str(e)
@@ -137,10 +137,8 @@ Answer based only on the context above:'''
             answer = 'API authentication failed. Check your GOOGLE_API_KEY in .env file.'
         else:
             answer = f'Error generating response: {error_msg}'
-        
+
         return answer, []
-
-
 
     # ── Step 6: Return answer + sources ──────────────────
     sources = []
@@ -155,56 +153,38 @@ Answer based only on the context above:'''
 
     return answer, sources
 
-# ADD THIS FUNCTION to rag.py, below the existing ask() function
- 
+
 def ask_stream(question: str, customer_scope: list):
     '''
     Streaming version of ask().
-    Instead of returning (answer, sources) all at once,
-    this function is a GENERATOR that yields text pieces one by one.
- 
-    A generator is a special Python function that uses 'yield' instead
-    of 'return'. When you call a generator, you get an iterator back.
-    Each time you call next() on the iterator, it runs until the next yield.
- 
-    Usage in app.py:
-        for text_piece in ask_stream(question, scope):
-            print(text_piece, end='', flush=True)
- 
-    Args:
-        question:       The user's question
-        customer_scope: List of customer names the user can access
- 
-    Yields:
-        str: Small pieces of the answer text as they are generated
-        dict: At the very end, yields the sources list
+    Yields text pieces one by one as Gemini generates them,
+    then yields the sources list as the final item.
     '''
- 
-    # ── Step 1: Retrieve relevant chunks (same as ask()) ──
+
+    # ── Step 1: Retrieve relevant chunks ──────────────────
     question_embedding = embedder.encode(question).tolist()
- 
+
     if customer_scope:
         where_filter = {'customer': {'$in': customer_scope}}
     else:
         where_filter = None
- 
+
     results = collection.query(
         query_embeddings=[question_embedding],
         n_results=min(TOP_K_RESULTS, collection.count()),
         where=where_filter,
         include=['documents', 'metadatas', 'distances']
     )
- 
+
     retrieved_chunks   = results['documents'][0]
     retrieved_metadata = results['metadatas'][0]
     distances          = results['distances'][0]
- 
+
     if not retrieved_chunks:
-        # Yield an error message and stop
         yield 'I could not find relevant information for that query.'
         return
- 
-    # ── Step 2: Build context (same as ask()) ─────────────
+
+    # ── Step 2: Build context ─────────────────────────────
     context_parts = []
     for i, (chunk, meta) in enumerate(zip(retrieved_chunks, retrieved_metadata)):
         source   = meta.get('source',   'Unknown')
@@ -213,30 +193,27 @@ def ask_stream(question: str, customer_scope: list):
             f'[Source {i+1}: {source} | Customer: {customer}]\n{chunk}'
         )
     context = '\n\n---\n\n'.join(context_parts)
- 
+
     system_prompt = '''You are an SRE assistant for the WSO2 operations team.
 Answer ONLY from the provided context. If the answer is not in the context, say so.
 Be concise, precise, and always mention version numbers and specific values.'''
- 
+
     user_message = f'''Context:\n{context}\n\nQuestion: {question}
 \nAnswer based only on the context above:'''
- 
-  # ── Step 3: Call Gemini in STREAMING mode ─────────────
+
+    # ── Step 3: Call Gemini in STREAMING mode ─────────────
     full_prompt = f"{system_prompt}\n\n{user_message}"
-    
-    # Gemini's streaming response
+
     response = client.models.generate_content_stream(
         model=LLM_MODEL,
         contents=full_prompt
     )
-    
-    # Yield each text chunk as it arrives
+
     for chunk in response:
         if chunk.text:
             yield chunk.text
-    # ── Step 4: After all text is yielded, yield the sources ──
-    # We yield sources as a special marker so app.py knows
-    # when streaming is done and what sources to display.
+
+    # ── Step 4: Yield sources after all text ──────────────
     sources = []
     for meta, dist in zip(retrieved_metadata, distances):
         sources.append({
@@ -245,12 +222,7 @@ Be concise, precise, and always mention version numbers and specific values.'''
             'doc_type':   meta.get('doc_type', 'unknown'),
             'similarity': round(1 - dist, 3)
         })
-    # Yield sources as a dict — app.py checks the type to detect this
     yield sources
-
-
-
-
 
 
 def test_rag():

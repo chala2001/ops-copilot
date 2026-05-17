@@ -82,14 +82,14 @@ New joiners need weeks to onboard          Runbooks accessible from day one
 │                                                                     │
 │  ┌────────────────────────────────────────────────────────────┐    │
 │  │                    SECURITY LAYER                          │    │
-│  │  auth.py (bcrypt)  │  session_manager.py  │  rate_limiter  │   │
-│  │  audit_log.py      │  auth_guard.py        │               │    │
+│  │  auth/auth.py      │  auth/session_manager.py  │  auth/rate_limiter  │   │
+│  │  monitoring/audit_log.py  │  auth/auth_guard.py  │               │    │
 │  └────────────────────────────────────────────────────────────┘    │
 └─────────────────────────┬───────────────────────────────────────────┘
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        RAG ENGINE  (rag.py)                         │
+│                        RAG ENGINE  (core/rag.py)                    │
 │                                                                     │
 │   Question ──► Embed ──► ChromaDB Search ──► Build Context         │
 │                                                  │                  │
@@ -108,7 +108,7 @@ New joiners need weeks to onboard          Runbooks accessible from day one
 │  Vector   │      │    (LLM)    │
 │   Store   │      └─────────────┘
 └─────┬─────┘
-      │  populated by ingest.py
+      │  populated by core/ingest.py
       ▼
 ┌─────────────────────────────────┐
 │          DATA SOURCES           │
@@ -211,7 +211,7 @@ RAG (Retrieval-Augmented Generation) is the core technique. Instead of relying o
   ┌────────────────────────────────────────────────┐
   │  60-minute inactivity timeout                  │
   │  8-hour absolute session cap                   │
-  │  auth_guard.py — enforced on every page        │
+  │  auth/auth_guard.py — enforced on every page   │
   └────────────────────────────────────────────────┘
             │
   Layer 4 — Rate Limiting
@@ -277,21 +277,28 @@ RAG (Retrieval-Augmented Generation) is the core technique. Instead of relying o
 ## Project Structure
 
 ```
-ops-copilot_gemini/
+ops-copilot/
 │
 ├── app.py                      # Main chat UI — entry point
-│
-├── rag.py                      # RAG engine: embed → search → generate
-├── ingest.py                   # Document ingestion pipeline
-├── config.py                   # Centralised settings
-├── auth.py                     # bcrypt authentication
-├── auth_guard.py               # Session check shared by all pages
-├── session_manager.py          # Inactivity/absolute timeout tracking
-├── rate_limiter.py             # Sliding window rate limiting
-├── audit_log.py                # Security event logging
-├── logger.py                   # Query logging (latency, sources)
-├── evaluate.py                 # RAGAS evaluation runner
+├── db.py                       # Shared PostgreSQL connection helper
 ├── scheduler.py                # Automated re-ingestion scheduler
+├── migrate_json_to_pg.py       # One-time migration from JSON to PostgreSQL
+│
+├── core/                       # RAG engine and ingestion
+│   ├── rag.py                  # Embed → search → generate pipeline
+│   ├── ingest.py               # Document ingestion pipeline
+│   └── config.py               # Centralised settings
+│
+├── auth/                       # Authentication and session management
+│   ├── auth.py                 # bcrypt authentication
+│   ├── auth_guard.py           # Session check shared by all pages
+│   ├── session_manager.py      # Inactivity/absolute timeout tracking
+│   └── rate_limiter.py         # Sliding window rate limiting
+│
+├── monitoring/                 # Logging and evaluation
+│   ├── audit_log.py            # Security event logging
+│   ├── logger.py               # Query logging (latency, sources)
+│   └── evaluate.py             # RAGAS evaluation runner
 │
 ├── pages/
 │   ├── 2_Evaluation_Dashboard.py   # RAG quality metrics
@@ -305,26 +312,45 @@ ops-copilot_gemini/
 │   ├── pdf/                    # PDF documents
 │   └── confluence/             # Confluence page exports
 │
+├── db/
+│   └── init.sql                # PostgreSQL schema initialisation
+│
+├── docs/                       # Project documentation
+│   ├── 00_START_HERE.md
+│   ├── 01_architecture.md
+│   ├── 02_streamlit_explained.md
+│   ├── 03_rag_pipeline.md
+│   ├── 04_authentication.md
+│   ├── 05_security.md
+│   ├── 06_code_files.md
+│   ├── 07_dashboards.md
+│   ├── 08_evaluation.md
+│   ├── 09_commands.md
+│   ├── 10_presentation_guide.md
+│   └── futureworks/            # Implementation guides
+│       ├── STEP1_BCRYPT_AUTH.md
+│       ├── STEP2_SESSION_TIMEOUT.md
+│       ├── STEP3_ENV_AND_GITIGNORE.md
+│       ├── STEP4_AUDIT_AND_RATE_LIMITING.md
+│       ├── STEP5_HTTPS_BEGINNERS_GUIDE.md
+│       ├── STEP6_LOCAL_TESTING_CHECKLIST.md
+│       └── TEST_QA_SHEET.md
+│
+├── scripts/
+│   └── migration.py            # Utility scripts
+│
+├── tests/
+│   ├── test_ingest.py
+│   └── test_rag.py
+│
 ├── .streamlit/config.toml      # HTTPS and server configuration
 ├── certs/                      # TLS certificate files
 ├── chroma_db/                  # Vector store (auto-generated)
-├── audit_log.json              # Security event log (auto-generated)
-├── query_log.json              # Query history (auto-generated)
 ├── ingestion_state.json        # File hash tracking (auto-generated)
-├── users.json                  # User accounts (bcrypt hashes)
 │
 ├── Dockerfile
 ├── docker-compose.yml
-├── requirements.txt
-│
-└── futureworks/                # Implementation guides
-    ├── STEP1_BCRYPT_AUTH.md
-    ├── STEP2_SESSION_TIMEOUT.md
-    ├── STEP3_ENV_AND_GITIGNORE.md
-    ├── STEP4_AUDIT_AND_RATE_LIMITING.md
-    ├── STEP5_HTTPS_BEGINNERS_GUIDE.md
-    ├── STEP6_LOCAL_TESTING_CHECKLIST.md
-    └── TEST_QA_SHEET.md
+└── requirements.txt
 ```
 
 ---
@@ -464,7 +490,7 @@ After this completes, the JSON files are no longer used — everything reads and
 
 ### Why you need `--build` after a code change
 
-The Dockerfile uses `COPY . .` to bake the source code into the image at build time. The `pages/`, `auth.py`, `app.py`, etc. inside the container are **frozen snapshots** taken when the image was built — they are not live-mounted from your host.
+The Dockerfile uses `COPY . .` to bake the source code into the image at build time. The `pages/`, `auth/`, `core/`, `app.py`, etc. inside the container are **frozen snapshots** taken when the image was built — they are not live-mounted from your host.
 
 So:
 - Editing `app.py` on the host → restart alone does nothing, you must rebuild.
@@ -536,7 +562,7 @@ CONFLUENCE_API_TOKEN=your_token
 CONFLUENCE_SPACE_KEY=SRE
 ```
 
-**Tuning options in `config.py`:**
+**Tuning options in `core/config.py`:**
 
 | Setting | Default | When to change |
 |---|---|---|
@@ -987,7 +1013,7 @@ Delete users instantly. Non-admin users cannot access this page (auth_guard bloc
 
 ## Testing
 
-A 37-question manual test sheet is at `futureworks/TEST_QA_SHEET.md` covering:
+A 37-question manual test sheet is at `docs/futureworks/TEST_QA_SHEET.md` covering:
 - Version questions (which customer runs which version)
 - Infrastructure details (node types, regions, databases)
 - Known issues and workarounds
@@ -1021,7 +1047,7 @@ docker-compose up --build
 ```
 
 ### Production (cloud VM)
-See `futureworks/STEP5_HTTPS_BEGINNERS_GUIDE.md` for a full beginner-friendly guide to:
+See `docs/futureworks/STEP5_HTTPS_BEGINNERS_GUIDE.md` for a full beginner-friendly guide to:
 - Setting up Nginx as a reverse proxy
 - Getting a free Let's Encrypt certificate with Certbot
 - Running as a systemd service that survives reboots

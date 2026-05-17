@@ -6,8 +6,8 @@ from pathlib import Path
 # Add the project root to the path so we can import our modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ingest import load_markdown_documents, split_documents, add_customer_metadata
-from config import CHUNK_SIZE
+from core.ingest import load_markdown_documents, split_documents, add_customer_metadata
+from core.config import CHUNK_SIZE
 
 def test_markdown_loading():
     '''Test that markdown files load correctly.'''
