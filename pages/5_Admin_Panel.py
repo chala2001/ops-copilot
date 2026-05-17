@@ -4,7 +4,6 @@
 # The old version used hashlib.sha256 directly — that is now removed.
 
 import streamlit as st
-import json
 from pathlib import Path
 from auth.auth_guard import require_authentication
 from auth.auth import create_user, delete_user, load_users
@@ -162,14 +161,12 @@ st.subheader('System Information')
 col1, col2, col3 = st.columns(3)
 
 try:
-    log_file = Path('query_log.json')
-    if log_file.exists():
-        with open(log_file) as f:
-            log_data = json.load(f)
-            total_queries = len(log_data.get('queries', []))
-    else:
-        total_queries = 0
-
+    from db import get_db
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM query_log")
+            total_queries = cur.fetchone()[0]
+    
     doc_count = 0
     for doc_dir in ['data/markdown', 'data/pdf', 'data/yaml']:
         if Path(doc_dir).exists():

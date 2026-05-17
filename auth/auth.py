@@ -1,41 +1,40 @@
 # auth/auth.py
-# ── Enterprise Authentication with bcrypt ─────────────────
+# ── Enterprise Authentication with bcrypt + PostgreSQL ────
 
 import bcrypt
-import json
 import logging
-from pathlib import Path
 from typing import Optional, Dict
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-USERS_FILE = 'users.json'
-
 
 def load_users() -> dict:
-    """Load user data from users.json."""
+    """
+    Load all users from the PostgreSQL database.
+    Returns {username: {password_hash, display_name, customers, role}}.
+    """
+    from db import get_db
     try:
-        if not Path(USERS_FILE).exists():
-            logger.error(f'{USERS_FILE} not found')
-            raise FileNotFoundError(
-                f'{USERS_FILE} not found. Create it with user credentials.'
-            )
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT username, password_hash, display_name, customers, role FROM users"
+                )
+                rows = cur.fetchall()
 
-        with open(USERS_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        return {
+            row[0]: {
+                'password_hash': row[1],
+                'display_name':  row[2] or row[0],
+                'customers':     list(row[3]) if row[3] else ['ALL'],
+                'role':          row[4] or 'sre',
+            }
+            for row in rows
+        }
 
-        if 'users' not in data:
-            logger.error(f'{USERS_FILE} missing "users" key')
-            raise ValueError(f'{USERS_FILE} has invalid format')
-
-        return data['users']
-
-    except json.JSONDecodeError as e:
-        logger.error(f'Invalid JSON in {USERS_FILE}: {e}')
-        raise ValueError(f'{USERS_FILE} contains invalid JSON')
     except Exception as e:
-        logger.error(f'Error loading users: {e}')
+        logger.error(f'Error loading users from database: {e}')
         raise
 
 
@@ -92,9 +91,6 @@ def check_login(username: str, password: str) -> Optional[Dict]:
 
         try:
             users = load_users()
-        except FileNotFoundError:
-            logger.error("Users file not found during login")
-            raise
         except Exception as e:
             logger.error(f"Failed to load users during login: {e}")
             return None
@@ -116,9 +112,7 @@ def check_login(username: str, password: str) -> Optional[Dict]:
             logger.error(f"Invalid user data structure for {username}")
             return None
 
-        stored_hash = user['password_hash']
-
-        if not verify_password(password, stored_hash):
+        if not verify_password(password, user['password_hash']):
             logger.info(f"Failed login attempt for user: {username}")
             record_failed_login(username)
             log_security_event(
@@ -150,20 +144,21 @@ def check_login(username: str, password: str) -> Optional[Dict]:
 
 def get_user_customers(username: str) -> list:
     """Get the list of customers a user can access."""
+    from db import get_db
     try:
-        users = load_users()
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT customers FROM users WHERE username = %s",
+                    (username,)
+                )
+                row = cur.fetchone()
 
-        if username not in users:
+        if row is None:
             logger.warning(f"User {username} not found when getting customers")
             return ['ALL']
 
-        customers = users[username].get('customers', ['ALL'])
-
-        if not isinstance(customers, list):
-            logger.warning(f"Invalid customers format for {username}")
-            return ['ALL']
-
-        return customers
+        return list(row[0]) if row[0] else ['ALL']
 
     except Exception as e:
         logger.error(f"Error getting customers for {username}: {e}")
@@ -171,30 +166,27 @@ def get_user_customers(username: str) -> list:
 
 
 def create_user(username: str, password: str, display_name: str, role: str = 'sre') -> bool:
-    """Create a new user and save to users.json."""
+    """Insert a new user into the PostgreSQL users table."""
+    from db import get_db
     try:
-        users = load_users()
-
-        if username in users:
-            logger.warning(f"Attempted to create existing user: {username}")
-            return False
-
         password_hash = hash_password(password)
 
-        users[username] = {
-            'password_hash': password_hash,
-            'display_name': display_name,
-            'customers': ['ALL'],
-            'role': role
-        }
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO users (username, password_hash, display_name, customers, role)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (username) DO NOTHING
+                    RETURNING username
+                    """,
+                    (username, password_hash, display_name, ['ALL'], role)
+                )
+                result = cur.fetchone()
 
-        with open(USERS_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-
-        data['users'] = users
-
-        with open(USERS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2)
+        if result is None:
+            logger.warning(f"Attempted to create existing user: {username}")
+            return False
 
         logger.info(f"User created: {username}")
         return True
@@ -205,23 +197,20 @@ def create_user(username: str, password: str, display_name: str, role: str = 'sr
 
 
 def delete_user(username: str) -> bool:
-    """Delete a user from users.json."""
+    """Delete a user from the PostgreSQL users table."""
+    from db import get_db
     try:
-        users = load_users()
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM users WHERE username = %s RETURNING username",
+                    (username,)
+                )
+                result = cur.fetchone()
 
-        if username not in users:
+        if result is None:
             logger.warning(f"Attempted to delete non-existent user: {username}")
             return False
-
-        del users[username]
-
-        with open(USERS_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-
-        data['users'] = users
-
-        with open(USERS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2)
 
         logger.info(f"User deleted: {username}")
         return True
