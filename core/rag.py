@@ -9,10 +9,12 @@
 
 from google import genai
 import chromadb
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, CrossEncoder
 from core.config import (
     GOOGLE_API_KEY, LLM_MODEL, EMBEDDING_MODEL,
-    CHROMA_PATH, COLLECTION_NAME, TOP_K_RESULTS
+    CHROMA_PATH, COLLECTION_NAME, TOP_K_RESULTS,
+    RERANK_ENABLED, RETRIEVAL_TOP_N, RERANKER_MODEL,
+    BGE_QUERY_PREFIX,
 )
 
 # ── Initialize once at module load ───────────────────────
@@ -24,11 +26,82 @@ client = genai.Client(api_key=GOOGLE_API_KEY)
 # Embedding model (same one used in ingest.py — must match!)
 embedder = SentenceTransformer(EMBEDDING_MODEL)
 
+# Cross-encoder for reranking. Reads (query, chunk) together and gives a
+# relevance score — slower than vector search but much more accurate, so
+# we only run it on the top N candidates from stage 1.
+reranker = CrossEncoder(RERANKER_MODEL) if RERANK_ENABLED else None
+
 # Connect to ChromaDB
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
-collection = chroma_client.get_or_create_collection(name=COLLECTION_NAME)
 
-print(f'RAG engine ready. Database has {collection.count()} chunks.')
+def get_collection():
+    # Fetch the collection fresh on every call. Avoids stale references when
+    # another process (e.g. `python ingest.py --clear`) deletes and recreates
+    # the collection — which gives it a new internal UUID.
+    return chroma_client.get_or_create_collection(name=COLLECTION_NAME)
+
+print(f'RAG engine ready. Database has {get_collection().count()} chunks. '
+      f'Reranking: {"on" if RERANK_ENABLED else "off"}.')
+
+
+def _embed_query(question: str) -> list:
+    """Encode a query with the BGE prefix it was trained to expect."""
+    return embedder.encode(BGE_QUERY_PREFIX + question).tolist()
+
+
+def _retrieve(question: str, customer_scope: list) -> tuple:
+    """
+    Two-stage retrieval:
+      1. Vector search → RETRIEVAL_TOP_N candidates (or TOP_K_RESULTS if rerank off)
+      2. Cross-encoder rerank → keep top TOP_K_RESULTS
+    Returns (chunks, metadatas, similarities).
+    """
+    collection = get_collection()
+    total = collection.count()
+    if total == 0:
+        return [], [], []
+
+    stage1_k = RETRIEVAL_TOP_N if RERANK_ENABLED else TOP_K_RESULTS
+    n_results = min(stage1_k, total)
+
+    where_filter = {'customer': {'$in': customer_scope}} if customer_scope else None
+
+    results = collection.query(
+        query_embeddings=[_embed_query(question)],
+        n_results=n_results,
+        where=where_filter,
+        include=['documents', 'metadatas', 'distances'],
+    )
+
+    chunks    = results['documents'][0]
+    metas     = results['metadatas'][0]
+    distances = results['distances'][0]
+
+    if not chunks:
+        return [], [], []
+
+    # Convert ChromaDB cosine distance to a similarity score in [0, 1]
+    similarities = [round(1 - d, 3) for d in distances]
+
+    if not RERANK_ENABLED or reranker is None:
+        return chunks, metas, similarities
+
+    # ── Stage 2: rerank with cross-encoder ────────────────
+    # The cross-encoder scores each (question, chunk) pair directly.
+    # Higher score = more relevant. We keep the top TOP_K_RESULTS.
+    pairs = [(question, chunk) for chunk in chunks]
+    scores = reranker.predict(pairs)
+
+    ranked = sorted(
+        zip(scores, chunks, metas, similarities),
+        key=lambda x: x[0],
+        reverse=True,
+    )[:TOP_K_RESULTS]
+
+    chunks       = [r[1] for r in ranked]
+    metas        = [r[2] for r in ranked]
+    similarities = [r[3] for r in ranked]
+    return chunks, metas, similarities
 
 # ── Access Control ───────────────────────────────────────
 USER_PERMISSIONS = {
@@ -57,33 +130,15 @@ def ask(question: str, customer_scope: list) -> tuple:
     if not customer_scope:
         return ('No customer scope selected. Please select at least one customer.', [])
 
-    if collection.count() == 0:
+    if get_collection().count() == 0:
         return ('The knowledge base is empty. Please run: python ingest.py', [])
 
+    # ── Step 1+2: Retrieve and (optionally) rerank ───────
+    retrieved_chunks, retrieved_metadata, similarities = _retrieve(question, customer_scope)
 
-    # ── Step 1: Convert question to a vector ─────────────
-    question_embedding = embedder.encode(question).tolist()
-
-    # ── Step 2: Search ChromaDB ───────────────────────────
-    if customer_scope:
-        where_filter = {'customer': {'$in': customer_scope}}
-    else:
-        where_filter = None
-
-    results = collection.query(
-        query_embeddings=[question_embedding],
-        n_results=min(TOP_K_RESULTS, collection.count()) if collection.count() > 0 else 0,
-        where=where_filter,
-        include=['documents', 'metadatas', 'distances']
-    )
-
-    if not results['documents'] or not results['documents'][0]:
+    if not retrieved_chunks:
         return ('I could not find relevant information for that query. '
                 'Try rephrasing or check if the documents are ingested.', [])
-
-    retrieved_chunks = results['documents'][0]
-    retrieved_metadata = results['metadatas'][0]
-    distances = results['distances'][0]
 
     # ── Step 3: Build the context string ─────────────────
     context_parts = []
@@ -142,13 +197,13 @@ Answer based only on the context above:'''
 
     # ── Step 6: Return answer + sources ──────────────────
     sources = []
-    for chunk, meta, dist in zip(retrieved_chunks, retrieved_metadata, distances):
+    for chunk, meta, sim in zip(retrieved_chunks, retrieved_metadata, similarities):
         sources.append({
             'content': chunk,
             'source': meta.get('source', 'Unknown'),
             'customer': meta.get('customer', 'General'),
             'doc_type': meta.get('doc_type', 'unknown'),
-            'similarity': round(1 - dist, 3)
+            'similarity': sim,
         })
 
     return answer, sources
@@ -161,24 +216,8 @@ def ask_stream(question: str, customer_scope: list):
     then yields the sources list as the final item.
     '''
 
-    # ── Step 1: Retrieve relevant chunks ──────────────────
-    question_embedding = embedder.encode(question).tolist()
-
-    if customer_scope:
-        where_filter = {'customer': {'$in': customer_scope}}
-    else:
-        where_filter = None
-
-    results = collection.query(
-        query_embeddings=[question_embedding],
-        n_results=min(TOP_K_RESULTS, collection.count()),
-        where=where_filter,
-        include=['documents', 'metadatas', 'distances']
-    )
-
-    retrieved_chunks   = results['documents'][0]
-    retrieved_metadata = results['metadatas'][0]
-    distances          = results['distances'][0]
+    # ── Step 1: Retrieve relevant chunks (with rerank if enabled) ─
+    retrieved_chunks, retrieved_metadata, similarities = _retrieve(question, customer_scope)
 
     if not retrieved_chunks:
         yield 'I could not find relevant information for that query.'
@@ -215,12 +254,12 @@ Be concise, precise, and always mention version numbers and specific values.'''
 
     # ── Step 4: Yield sources after all text ──────────────
     sources = []
-    for meta, dist in zip(retrieved_metadata, distances):
+    for meta, sim in zip(retrieved_metadata, similarities):
         sources.append({
             'source':     meta.get('source',   'Unknown'),
             'customer':   meta.get('customer', 'General'),
             'doc_type':   meta.get('doc_type', 'unknown'),
-            'similarity': round(1 - dist, 3)
+            'similarity': sim,
         })
     yield sources
 

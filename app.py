@@ -81,7 +81,7 @@ st.markdown('''
 ''', unsafe_allow_html=True)
 
 # ── Sidebar ───────────────────────────────────────────────
-from core.rag import collection
+from core.rag import get_collection
 from auth.session_manager import display_session_status
 
 with st.sidebar:
@@ -95,7 +95,7 @@ with st.sidebar:
         st.rerun()
 
     display_session_status()
-    st.metric('Knowledge chunks', collection.count())
+    st.metric('Knowledge chunks', get_collection().count())
     st.divider()
 
     st.info('🔓 **Full Access Mode**\nSearch across all customer documents')
