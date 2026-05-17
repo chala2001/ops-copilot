@@ -3,4 +3,6 @@ venv/
 __pycache__/
 chroma_db/
 query_log.json
+audit_log.json
+users.json
 ingestion_state.json
