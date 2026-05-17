@@ -69,7 +69,7 @@ After this, every byte going both ways is encrypted. The session key is unique p
 
 ---
 
-## Layer 3: Session Management (session_manager.py)
+## Layer 3: Session Management (auth/session_manager.py)
 
 ### The Problem Sessions Solve
 
@@ -133,7 +133,7 @@ After `logout_user()`, the next rerun will show the login form.
 
 ---
 
-## Layer 4: Rate Limiting (rate_limiter.py)
+## Layer 4: Rate Limiting (auth/rate_limiter.py)
 
 Rate limiting controls how fast a user can perform actions. We have two separate rate limiters.
 
@@ -243,7 +243,7 @@ This way, a user who accidentally mistyped their password 4 times can still log 
 
 ---
 
-## Layer 5 (Logging): Audit Log (audit_log.py)
+## Layer 5 (Logging): Audit Log (monitoring/audit_log.py)
 
 The audit log records every security-relevant event. It answers "who did what and when?"
 
@@ -310,7 +310,7 @@ trail = get_user_audit_trail('alice', limit=50)
 
 ---
 
-## The Query Log (logger.py)
+## The Query Log (monitoring/logger.py)
 
 Separate from the audit log, `query_log.json` records operational data about every AI query:
 
@@ -352,5 +352,5 @@ The query log is for **operational metrics**, not security. The audit log is for
 | All-day session hijacking | 8-hour maximum session limit |
 | API cost explosion | 10 queries/min, 100 queries/hour limits |
 | Unnoticed attacks | Audit log records all security events |
-| Unauthorized page access | auth_guard.py on every page |
+| Unauthorized page access | auth/auth_guard.py on every page |
 | Admin-only actions by non-admins | Role check in Admin Panel |

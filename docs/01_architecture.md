@@ -29,7 +29,7 @@ That is exactly what this system does — except the "assistant" is Google Gemin
 │                    STREAMLIT SERVER (app.py)                          │
 │                                                                       │
 │   ┌─────────────┐    ┌──────────────┐    ┌─────────────────────┐   │
-│   │  auth.py    │    │ session_mgr  │    │   rate_limiter.py   │   │
+│   │ auth/auth   │    │ auth/session │    │  auth/rate_limiter  │   │
 │   │  (login)    │    │  (timeout)   │    │   (throttle)        │   │
 │   └──────┬──────┘    └──────┬───────┘    └──────────┬──────────┘   │
 │          │                  │                        │               │
@@ -37,7 +37,7 @@ That is exactly what this system does — except the "assistant" is Google Gemin
 │                              │                                        │
 │                              ▼                                        │
 │                    ┌─────────────────┐                               │
-│                    │    rag.py       │    ◄── USER'S QUESTION        │
+│                    │  core/rag.py   │    ◄── USER'S QUESTION        │
 │                    │  (RAG engine)   │                               │
 │                    └────────┬────────┘                               │
 │                             │                                        │
@@ -54,7 +54,8 @@ That is exactly what this system does — except the "assistant" is Google Gemin
 │                              (context sent to Gemini)                │
 │                                                                       │
 │   ┌──────────────┐   ┌──────────────────┐   ┌──────────────────┐   │
-│   │  logger.py   │   │  audit_log.py    │   │  auth_guard.py   │   │
+│   │monitoring/   │   │  monitoring/     │   │  auth/           │   │
+│   │ logger.py    │   │  audit_log.py    │   │  auth_guard.py   │   │
 │   │ (query log)  │   │ (security events)│   │ (page guard)     │   │
 │   └──────────────┘   └──────────────────┘   └──────────────────┘   │
 └─────────────────────────────────────────────────────────────────────┘
@@ -62,7 +63,7 @@ That is exactly what this system does — except the "assistant" is Google Gemin
                                 │ (ONE-TIME SETUP)
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    INGESTION PIPELINE (ingest.py)                     │
+│                 INGESTION PIPELINE (core/ingest.py)                   │
 │                                                                       │
 │  data/markdown/*.md  ──┐                                             │
 │  data/pdf/*.pdf      ──┼──► split into chunks ──► embed ──► ChromaDB│
@@ -101,26 +102,29 @@ When a user logs in and asks a question:
 ## All System Files and Their Roles
 
 ```
-ops-copilot_gemini/
+ops-copilot/
 │
 ├── app.py                   ← Main chat interface (the first page users see)
-├── config.py                ← All settings (API keys, limits, paths)
-├── rag.py                   ← Brain — does the search + Gemini call
-├── ingest.py                ← One-time document loader
-├── evaluate.py              ← Measures AI answer quality
+├── db.py                    ← Shared PostgreSQL connection helper
+├── scheduler.py             ← Background auto-ingestion scheduler
+├── ingest.py                ← Entry point: runs core/ingest.py
+├── evaluate.py              ← Entry point: runs monitoring/evaluate.py
 │
-├── auth.py                  ← Login logic + user management functions
-├── auth_guard.py            ← Reusable page protection for dashboards
-├── session_manager.py       ← Session timeout tracking
-├── rate_limiter.py          ← API and login throttling
-├── audit_log.py             ← Security event logging
-├── logger.py                ← Query/usage logging
+├── core/                    ← RAG engine and ingestion
+│   ├── config.py            ← All settings (API keys, limits, paths)
+│   ├── rag.py               ← Brain — does the search + Gemini call
+│   └── ingest.py            ← Document ingestion pipeline
 │
-├── users.json               ← User accounts (bcrypt hashed passwords)
-├── audit_log.json           ← Security events (auto-generated)
-├── query_log.json           ← Query history (auto-generated)
-├── ingestion_state.json     ← Which files have been ingested
-├── evaluation_results.json  ← Last AI quality score
+├── auth/                    ← Authentication and session management
+│   ├── auth.py              ← Login logic + user management functions
+│   ├── auth_guard.py        ← Reusable page protection for dashboards
+│   ├── session_manager.py   ← Session timeout tracking
+│   └── rate_limiter.py      ← API and login throttling
+│
+├── monitoring/              ← Logging and evaluation
+│   ├── audit_log.py         ← Security event logging
+│   ├── logger.py            ← Query/usage logging
+│   └── evaluate.py          ← Measures AI answer quality
 │
 ├── pages/
 │   ├── 2_Evaluation_Dashboard.py  ← AI quality scores UI
@@ -132,6 +136,16 @@ ops-copilot_gemini/
 │   ├── markdown/            ← Your .md runbooks and docs
 │   ├── pdf/                 ← Your PDF documents
 │   └── yaml/                ← Your Kubernetes YAML files
+│
+├── db/
+│   └── init.sql             ← PostgreSQL schema initialisation
+│
+├── tests/
+│   ├── test_ingest.py
+│   └── test_rag.py
+│
+├── scripts/
+│   └── migration.py
 │
 ├── chroma_db/               ← Where vectors are stored on disk
 ├── certs/                   ← TLS certificates for HTTPS
@@ -148,28 +162,28 @@ ops-copilot_gemini/
 ```
 app.py
   │
-  ├── imports auth.py           (to handle login)
-  ├── imports rag.py            (to answer questions)
-  ├── imports logger.py         (to log every query)
-  ├── imports session_manager.py (to check session timeout)
-  └── imports rate_limiter.py   (to block too-fast queries)
+  ├── imports auth.auth           (to handle login)
+  ├── imports core.rag            (to answer questions)
+  ├── imports monitoring.logger   (to log every query)
+  ├── imports auth.session_manager (to check session timeout)
+  └── imports auth.rate_limiter   (to block too-fast queries)
 
-auth.py
+auth/auth.py
   │
-  ├── imports rate_limiter.py   (to check login attempt count)
-  └── imports audit_log.py     (to log login success/failure)
+  ├── imports auth.rate_limiter   (to check login attempt count)
+  └── imports monitoring.audit_log (to log login success/failure)
 
 pages/2_Evaluation_Dashboard.py
 pages/3_Ingestion_Log.py
 pages/4_Usage_Dashboard.py
 pages/5_Admin_Panel.py
   │
-  └── all import auth_guard.py  (to enforce login on every page)
+  └── all import auth.auth_guard  (to enforce login on every page)
 
-auth_guard.py
+auth/auth_guard.py
   │
-  ├── imports auth.py           (for check_login)
-  └── imports session_manager.py (for session check)
+  ├── imports auth.auth           (for check_login)
+  └── imports auth.session_manager (for session check)
 ```
 
 ---
@@ -216,8 +230,8 @@ app.py receives the text via st.chat_input()
 
 | Layer | Who Stops It | What It Stops |
 |-------|-------------|---------------|
-| Authentication | auth.py + auth_guard.py | Unauthenticated users seeing any page |
-| Session timeout | session_manager.py | Abandoned logged-in sessions |
-| Rate limiting | rate_limiter.py | Brute-force attacks + API abuse |
+| Authentication | auth/auth.py + auth/auth_guard.py | Unauthenticated users seeing any page |
+| Session timeout | auth/session_manager.py | Abandoned logged-in sessions |
+| Rate limiting | auth/rate_limiter.py | Brute-force attacks + API abuse |
 
 All three run on every page load before any content is shown.

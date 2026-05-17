@@ -42,7 +42,7 @@ collection.upsert(ids=ids, documents=texts, embeddings=embeddings, metadatas=met
 
 ---
 
-## 2. RAG Query Engine (`rag.py`)
+## 2. RAG Query Engine (`core/rag.py`)
 
 This module handles the "Search" and "Reasoning" phases.
 
@@ -89,7 +89,7 @@ with st.expander(f'View {len(sources)} source(s)'):
 
 ---
 
-## 4. Evaluation Framework (`evaluate.py`)
+## 4. Evaluation Framework (`monitoring/evaluate.py`)
 
 ### 4.1 Gemini-to-Gemini Evaluation
 ```python

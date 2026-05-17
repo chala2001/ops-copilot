@@ -128,7 +128,7 @@ pages/
 
 The number prefix (2_, 3_, etc.) controls the order they appear in the sidebar. Streamlit strips the number and underscore from the display name.
 
-Each page file is its own independent Python script. When a user navigates to a page, Streamlit runs that page's script. Because `st.session_state` is shared across all pages in the same browser session, the authentication state set in `app.py` is visible in every page file — that's how `auth_guard.py` can check if the user is logged in even on a different page.
+Each page file is its own independent Python script. When a user navigates to a page, Streamlit runs that page's script. Because `st.session_state` is shared across all pages in the same browser session, the authentication state set in `app.py` is visible in every page file — that's how `auth/auth_guard.py` can check if the user is logged in even on a different page.
 
 ---
 
@@ -204,7 +204,7 @@ When the user asks a question, the answer appears word by word — just like Cha
 A generator is a function that uses `yield` instead of `return`. Each `yield` gives back one piece of data, then pauses, then continues when asked for the next piece.
 
 ```python
-# In rag.py — ask_stream is a generator
+# In core/rag.py — ask_stream is a generator
 def ask_stream(question, customer_scope):
     # ... retrieve chunks, build prompt ...
     

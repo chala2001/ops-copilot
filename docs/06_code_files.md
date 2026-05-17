@@ -4,9 +4,9 @@
 
 ---
 
-## config.py — Central Settings Store
+## core/config.py — Central Settings Store
 
-**File:** [config.py](../config.py)  
+**File:** [core/config.py](../core/config.py)  
 **Purpose:** One place to change settings without hunting through multiple files.
 
 ```python
@@ -28,11 +28,11 @@ PDF_DIR          = './data/pdf'                    # where PDF docs live
 
 **How other files use it:**
 ```python
-# Every other Python file imports from config.py:
-from config import GOOGLE_API_KEY, LLM_MODEL, CHROMA_PATH, ...
+# Every other Python file imports from core/config.py:
+from core.config import GOOGLE_API_KEY, LLM_MODEL, CHROMA_PATH, ...
 ```
 
-**Changing settings:** Edit `config.py` and restart the app. For secrets (API keys), change the `.env` file instead — `config.py` reads from it.
+**Changing settings:** Edit `core/config.py` and restart the app. For secrets (API keys), change the `.env` file instead — `core/config.py` reads from it.
 
 ---
 
@@ -109,16 +109,16 @@ if prompt:
 
 ---
 
-## rag.py — The Brain: RAG Engine
+## core/rag.py — The Brain: RAG Engine
 
-**File:** [rag.py](../rag.py)  
+**File:** [core/rag.py](../core/rag.py)  
 **Purpose:** Embeds questions, searches ChromaDB, calls Gemini, streams answers.  
 **Lines:** 264
 
 ### Module-Level Initialization (Runs Once at Import)
 
 ```python
-# These run when Python first imports rag.py (at app startup)
+# These run when Python first imports core/rag.py (at app startup)
 client   = genai.Client(api_key=GOOGLE_API_KEY)          # Gemini connection
 embedder = SentenceTransformer(EMBEDDING_MODEL)           # load embedding model (~80MB)
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)  # connect to ChromaDB
@@ -129,7 +129,7 @@ Loading these takes a few seconds on startup. After that, they stay in memory �
 
 ### ask() — Synchronous Version
 
-Returns `(answer_string, sources_list)` all at once. Not used for the main chat (we use streaming instead), but used by `evaluate.py` for testing.
+Returns `(answer_string, sources_list)` all at once. Not used for the main chat (we use streaming instead), but used by `monitoring/evaluate.py` for testing.
 
 ```python
 def ask(question, customer_scope):
@@ -162,9 +162,9 @@ The `yield sources` at the end is a trick: app.py checks whether each yielded va
 
 ---
 
-## ingest.py — Document Ingestion Pipeline
+## core/ingest.py — Document Ingestion Pipeline
 
-**File:** [ingest.py](../ingest.py)  
+**File:** [core/ingest.py](../core/ingest.py)  
 **Purpose:** One-time (or periodic) script to load documents into ChromaDB.  
 **Run with:** `python ingest.py`
 
@@ -203,9 +203,9 @@ After ingestion, each file's MD5 hash is stored in `ingestion_state.json`. The I
 
 ---
 
-## auth.py — Authentication Logic
+## auth/auth.py — Authentication Logic
 
-**File:** [auth.py](../auth.py)  
+**File:** [auth/auth.py](../auth/auth.py)  
 **Purpose:** All user authentication: verify passwords, create users, delete users.  
 **Lines:** 336
 
@@ -232,9 +232,9 @@ This is intentional security design — never tell an attacker which part of the
 
 ---
 
-## auth_guard.py — Reusable Page Protection
+## auth/auth_guard.py — Reusable Page Protection
 
-**File:** [auth_guard.py](../auth_guard.py)  
+**File:** [auth/auth_guard.py](../auth/auth_guard.py)  
 **Purpose:** One function that every dashboard page calls to enforce authentication.  
 **Lines:** 57
 
@@ -246,15 +246,15 @@ def require_authentication() -> dict:
     # Return user_info if all OK
 ```
 
-**Why have a separate file?** Without it, every dashboard page would need 20+ lines of auth checking code, all identical. If we wanted to change the auth logic (e.g., add 2FA), we'd need to update 4 files. With auth_guard.py, we update one function.
+**Why have a separate file?** Without it, every dashboard page would need 20+ lines of auth checking code, all identical. If we wanted to change the auth logic (e.g., add 2FA), we'd need to update 4 files. With auth/auth_guard.py, we update one function.
 
 This is the software engineering principle of **Don't Repeat Yourself (DRY)**.
 
 ---
 
-## session_manager.py — Session Timeout Tracking
+## auth/session_manager.py — Session Timeout Tracking
 
-**File:** [session_manager.py](../session_manager.py)  
+**File:** [auth/session_manager.py](../auth/session_manager.py)  
 **Purpose:** Track when users last interacted and log them out when inactive.  
 **Lines:** 191
 
@@ -282,9 +282,9 @@ Every page interaction (clicking, typing, submitting) causes a rerun, which call
 
 ---
 
-## rate_limiter.py — Throttling
+## auth/rate_limiter.py — Throttling
 
-**File:** [rate_limiter.py](../rate_limiter.py)  
+**File:** [auth/rate_limiter.py](../auth/rate_limiter.py)  
 **Purpose:** Prevent API cost explosions and brute-force attacks.  
 **Lines:** 191
 
@@ -309,9 +309,9 @@ _failed_login_timestamps: dict = defaultdict(list)
 
 ---
 
-## audit_log.py — Security Event Journal
+## monitoring/audit_log.py — Security Event Journal
 
-**File:** [audit_log.py](../audit_log.py)  
+**File:** [monitoring/audit_log.py](../monitoring/audit_log.py)  
 **Purpose:** Append-only log of all security-relevant events.  
 **Lines:** 174
 
@@ -340,9 +340,9 @@ Using constants (not raw strings) means a typo like `'LOGON_SUCCESS'` would be c
 
 ---
 
-## logger.py — Query Usage Logger
+## monitoring/logger.py — Query Usage Logger
 
-**File:** [logger.py](../logger.py)  
+**File:** [monitoring/logger.py](../monitoring/logger.py)  
 **Purpose:** Record every RAG query for analytics and debugging.  
 **Lines:** 120
 
@@ -353,7 +353,7 @@ Using constants (not raw strings) means a typo like `'LOGON_SUCCESS'` would be c
 | `log_query(username, question, sources, latency_ms, ...)` | Append query record to query_log.json. |
 | `load_log()` | Read all query records for the Usage Dashboard. |
 
-### Why Separate from audit_log.py?
+### Why Separate from monitoring/audit_log.py?
 
 The audit log is for **security events** — who logged in, who was blocked, who was created. It needs to be tamper-evident and reviewed for security incidents.
 
@@ -363,9 +363,9 @@ Mixing them would make both harder to analyze. Keeping them separate follows the
 
 ---
 
-## evaluate.py — RAG Quality Measurement
+## monitoring/evaluate.py — RAG Quality Measurement
 
-**File:** [evaluate.py](../evaluate.py)  
+**File:** [monitoring/evaluate.py](../monitoring/evaluate.py)  
 **Purpose:** Run automated tests to measure how accurate the AI answers are.  
 **Run with:** `python evaluate.py`
 
@@ -393,9 +393,9 @@ Mixing them would make both harder to analyze. Keeping them separate follows the
 
 ---
 
-## migration.py — SHA-256 to bcrypt Migration Script
+## scripts/migration.py — SHA-256 to bcrypt Migration Script
 
-**File:** [migration.py](../migration.py)  
+**File:** [scripts/migration.py](../scripts/migration.py)  
 **Purpose:** One-time migration script for upgrading passwords from SHA-256 to bcrypt.  
 **Status:** Already run — all users in users.json now have bcrypt hashes.
 
