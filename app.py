@@ -3,10 +3,10 @@
 # Run with: streamlit run app.py
 
 import streamlit as st
-from rag import ask, ask_stream, get_authorized_customers
+from core.rag import ask, ask_stream, get_authorized_customers
 import time
-from logger import log_query
-from session_manager import check_session_timeout, init_session_tracking, logout_user
+from monitoring.logger import log_query
+from auth.session_manager import check_session_timeout, init_session_tracking, logout_user
 
 
 # ── Page Configuration ────────────────────────────────────
@@ -20,7 +20,7 @@ st.set_page_config(
 )
 
 
-from auth import check_login, get_user_customers as auth_get_customers
+from auth.auth import check_login, get_user_customers as auth_get_customers
 
 # ── Session State for Authentication ─────────────────────
 if 'authenticated' not in st.session_state:
@@ -101,7 +101,7 @@ st.markdown('''
  
 # ── Sidebar ──────────────────────────────────────────────
 # Everything inside 'with st.sidebar:' appears in the left panel.
-from rag import collection  # import collection count
+from core.rag import collection  # import collection count
 st.sidebar.metric('Total knowledge chunks', collection.count())
 # UPDATED CODE — use logout_user() and add session info:
 with st.sidebar:
@@ -116,7 +116,7 @@ with st.sidebar:
         st.rerun()
 
     # Show session countdown (optional — helps users know when they'll be logged out)
-    from session_manager import display_session_status
+    from auth.session_manager import display_session_status
     display_session_status()
     
     st.divider()
@@ -236,7 +236,7 @@ if prompt:
     # ── Rate limit check ───────────────────────────────────
     # Check BEFORE displaying the user's question or calling Gemini.
     # If blocked, show an error and stop — no API call is made.
-    from rate_limiter import check_query_rate_limit
+    from auth.rate_limiter import check_query_rate_limit
 
     query_allowed, rate_message = check_query_rate_limit(current_user)
 

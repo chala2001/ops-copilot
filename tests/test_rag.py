@@ -5,7 +5,7 @@ import os
 # Add the project root to the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from rag import ask, get_authorized_customers
+from core.rag import ask, get_authorized_customers
 
 # Test cases: questions with expected keywords in answers (if data exists)
 TEST_CASES = [
