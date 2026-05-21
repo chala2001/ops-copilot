@@ -69,13 +69,15 @@ After this, every byte going both ways is encrypted. The session key is unique p
 
 ---
 
-## Layer 3: Session Management (auth/session_manager.py)
+## Layer 3: Session Management (auth/session_manager.py + auth/session_token.py)
 
 ### The Problem Sessions Solve
 
 Once you log in, how does the server know you're still you on the next page load? HTTP is stateless — every request is independent.
 
 Streamlit solves this with `st.session_state` — a dictionary stored in server memory, associated with your browser tab. Our code stores the authentication state there.
+
+`st.session_state` is wiped on browser refresh (each refresh opens a new WebSocket, which Streamlit treats as a fresh session). To avoid forcing users to retype their password every refresh, we also keep a signed token in the URL query string (`?s=...`); `auth/session_token.py` reads it on every script run and restores the session state. The token is **HMAC-SHA256 signed** with `SESSION_SECRET` from `.env`, so it cannot be forged. Full details in `04_authentication.md` and `url_token_session_upgrade.md`.
 
 But we also need to handle two scenarios:
 1. **User walks away from their computer** — the session should eventually expire
@@ -247,6 +249,8 @@ This way, a user who accidentally mistyped their password 4 times can still log 
 
 The audit log records every security-relevant event. It answers "who did what and when?"
 
+Storage: events are written to the `audit_log` table in PostgreSQL (previously this was a flat `audit_log.json` file — see `docs/migrateforpostgresql.md` for the migration record).
+
 ### What Gets Logged
 
 ```python
@@ -261,36 +265,32 @@ QUERY_EXECUTED   # user ran a RAG query
 RATE_LIMIT_HIT   # user hit a rate limit
 ```
 
-### What Each Record Looks Like
+### Table Schema
 
-```json
-{
-  "timestamp":  "2026-05-13T10:34:22.145678",
-  "event_type": "LOGIN_FAILED",
-  "username":   "alice",
-  "ip_address": null,
-  "success":    false,
-  "details": {
-    "reason": "wrong_password"
-  }
-}
+```sql
+CREATE TABLE audit_log (
+    id          BIGSERIAL PRIMARY KEY,
+    timestamp   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    event_type  TEXT NOT NULL,
+    username    TEXT NOT NULL,
+    ip_address  TEXT,
+    success     BOOLEAN NOT NULL DEFAULT TRUE,
+    details     JSONB NOT NULL DEFAULT '{}'
+);
+CREATE INDEX idx_audit_timestamp  ON audit_log(timestamp);
+CREATE INDEX idx_audit_username   ON audit_log(username);
+CREATE INDEX idx_audit_event_type ON audit_log(event_type);
 ```
 
-### The Atomic Write Pattern
+### Why PostgreSQL Instead of JSON
 
-The audit log uses a "write-then-rename" pattern to prevent data corruption:
+The old JSON approach used a "write-then-rename" atomic pattern to avoid corruption. PostgreSQL gives us this for free via transactions — plus:
 
-```python
-# Step 1: Write to a temporary file
-temp_path = Path('audit_log.json.tmp')
-with open(temp_path, 'w') as f:
-    json.dump(log_data, f, indent=2)
+- Concurrent writers cannot corrupt each other (the JSON file struggled under multiple containers)
+- Indexed queries (e.g. "all LOGIN_FAILED events in the last hour") are fast even with millions of rows
+- The `details` field uses `JSONB`, which is queryable with standard SQL operators
 
-# Step 2: Atomically replace the real file
-temp_path.replace(Path('audit_log.json'))
-```
-
-**Why?** If the server crashes mid-write directly to `audit_log.json`, you get a half-written file that `json.load()` cannot parse — the entire audit log becomes unreadable. With the temp-file approach, either the old complete file exists, or the new complete file exists. Never a partial file.
+Same shape of record as before, just queryable with SQL instead of `json.load()`.
 
 ### Audit Log Use Cases
 
@@ -312,21 +312,22 @@ trail = get_user_audit_trail('alice', limit=50)
 
 ## The Query Log (monitoring/logger.py)
 
-Separate from the audit log, `query_log.json` records operational data about every AI query:
+Separate from the audit log, the `query_log` table in PostgreSQL records operational data about every AI query:
 
-```json
-{
-  "timestamp":      "2026-05-13T10:34:22",
-  "username":       "alice",
-  "question":       "What version is CustomerX running?",
-  "customer_scope": "ALL",
-  "answer_length":  342,
-  "num_sources":    5,
-  "latency_ms":     1250,
-  "success":        true,
-  "error":          null,
-  "top_source":     "data/markdown/customerX_runbook.md"
-}
+```sql
+CREATE TABLE query_log (
+    id             BIGSERIAL PRIMARY KEY,
+    timestamp      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    username       TEXT NOT NULL,
+    question       TEXT,
+    customer_scope TEXT NOT NULL DEFAULT 'ALL',
+    answer_length  INTEGER NOT NULL DEFAULT 0,
+    num_sources    INTEGER NOT NULL DEFAULT 0,
+    latency_ms     INTEGER NOT NULL DEFAULT 0,
+    success        BOOLEAN NOT NULL DEFAULT TRUE,
+    error          TEXT,
+    top_source     TEXT
+);
 ```
 
 This powers the Usage Dashboard (page 4):
@@ -354,3 +355,4 @@ The query log is for **operational metrics**, not security. The audit log is for
 | Unnoticed attacks | Audit log records all security events |
 | Unauthorized page access | auth/auth_guard.py on every page |
 | Admin-only actions by non-admins | Role check in Admin Panel |
+| Login flash + manual re-login on every refresh | Signed URL-token persistent login (see `04_authentication.md` and `url_token_session_upgrade.md`) |

@@ -67,11 +67,11 @@ Click "Admin Panel".
 
 **Answer:** Yes, document chunks (excerpts) are sent to the Gemini API as context when answering a question. The API key is ours — Google doesn't use API data for training by default under enterprise terms. For highly sensitive data, you'd want to run a local LLM instead of Gemini.
 
-The embedding model (`all-MiniLM-L6-v2`) runs completely locally — your documents are converted to vectors on your own machine, no data sent anywhere for that step.
+The embedding model (`BAAI/bge-base-en-v1.5`) and the reranker (`BAAI/bge-reranker-base`) both run completely locally — your documents are converted to vectors and reranked on your own machine, no data sent anywhere for those steps.
 
 ### "What happens if Gemini is down?"
 
-**Answer:** The app shows an error to the user. No crash, no data loss. The error is logged in `query_log.json`. The vector database and your documents are unaffected — you just can't get AI answers until Gemini recovers.
+**Answer:** The app shows an error to the user. No crash, no data loss. The error is recorded in the `query_log` table in PostgreSQL with `success = false` and the error message. The vector database and your documents are unaffected — you just can't get AI answers until Gemini recovers.
 
 ### "Can it read from Confluence directly?"
 
@@ -87,7 +87,7 @@ The embedding model (`all-MiniLM-L6-v2`) runs completely locally — your docume
 
 ### "Is this production-ready?"
 
-**Answer:** For an internal team tool with a small number of concurrent users (under 20), yes. For production at scale or external exposure, you'd want: a PostgreSQL database instead of file-based JSON logs, a proper SIEM instead of flat `audit_log.json`, a secrets manager instead of `.env`, and a reverse proxy like nginx in front of Streamlit.
+**Answer:** For an internal team tool with ~50 WSO2 engineers and 30–40 concurrent users, yes. Users, audit log, and query log are already in PostgreSQL. Streamlit runs in Docker behind HTTPS. For an external-facing deployment or significantly higher load, you'd want: a proper SIEM that ingests from the `audit_log` table, a secrets manager instead of `.env`, a reverse proxy like nginx in front of Streamlit, and the rate-limit counters moved from in-memory dicts to Redis or postgres so they survive container restarts.
 
 ### "Can we use this for CustomerZ runbooks too?"
 
@@ -101,20 +101,22 @@ The embedding model (`all-MiniLM-L6-v2`) runs completely locally — your docume
 SRE Types Question
        │
        ▼
-Streamlit Web App (app.py)
-  ├── Login check (auth/auth.py + bcrypt)
-  ├── Session check (60 min timeout)
-  └── Rate limit check (10 queries/min)
+Streamlit Web App (app.py, running in Docker)
+  ├── URL-token restore (auth/session_token.py)
+  ├── Login check (auth/auth.py + bcrypt, reads PostgreSQL)
+  ├── Session check (60 min idle + 8 hour max)
+  └── Rate limit check (10 queries/min, 100/hr)
        │
        ▼
 RAG Engine (core/rag.py)
-  ├── Convert question to vector (all-MiniLM-L6-v2, runs locally)
-  ├── Search ChromaDB for top 5 similar chunks
+  ├── Embed question with BGE base (768-dim, runs locally)
+  ├── ChromaDB top-20 vector search (wide net)
+  ├── BGE cross-encoder rerank → top 5 (precise)
   ├── Build prompt: system instructions + chunks + question
   └── Call Gemini API → stream answer
        │
        ▼
-Audit Log + Query Log (audit_log.json + query_log.json)
+PostgreSQL: audit_log table + query_log table
 ```
 
 ---
@@ -128,7 +130,7 @@ Audit Log + Query Log (audit_log.json + query_log.json)
 | Login throttle | 5 attempts/hour | Brute force |
 | Session timeout | 60 min inactive, 8 hr max | Abandoned sessions |
 | Query throttle | 10/min, 100/hr | API cost explosion |
-| Audit log | audit_log.json | Post-incident investigation |
+| Audit log | `audit_log` table (PostgreSQL) | Post-incident investigation |
 | Page guard | auth/auth_guard.py | Unauthenticated page access |
 | Role check | Admin Panel | Privilege escalation |
 
@@ -138,16 +140,18 @@ Audit Log + Query Log (audit_log.json + query_log.json)
 
 | Metric | Value |
 |--------|-------|
-| Knowledge chunks in database | 87+ (varies after ingestion) |
+| Knowledge chunks in database | varies after ingestion (see Ingestion Log page) |
 | Max queries per minute per user | 10 |
 | Max queries per hour per user | 100 |
 | Failed logins before lockout | 5 per hour |
-| Session inactivity timeout | 60 minutes |
-| Maximum session length | 8 hours |
-| Chunks retrieved per question | 5 |
+| Session inactivity timeout | 60 minutes (resets on every refresh / interaction) |
+| Maximum session length | 8 hours (NOT reset on refresh — counts from original login) |
+| Persistent-login URL token lifetime | 7 days |
+| Stage-1 vector-search candidates | 20 |
+| Final chunks retrieved per question | 5 (after reranking) |
 | Chunk size | 1000 characters (~200 words) |
 | Chunk overlap | 200 characters |
-| Embedding dimensions | 384 |
+| Embedding dimensions | 768 (BGE base) |
 | bcrypt cost factor | 12 (4096 iterations) |
 | Target faithfulness score | > 85% |
 | Target answer relevancy score | > 80% |

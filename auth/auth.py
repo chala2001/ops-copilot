@@ -142,6 +142,30 @@ def check_login(username: str, password: str) -> Optional[Dict]:
         return None
 
 
+def get_user_info(username: str) -> Optional[Dict]:
+    """
+    Look up a user by username without checking a password.
+
+    Used by the cookie-based session restore: the signed cookie already
+    proves identity, so we just need fresh role/customer data from the DB.
+    Returns the same dict shape as check_login() on success, None if missing.
+    """
+    try:
+        users = load_users()
+        user = users.get(username)
+        if not user:
+            return None
+        return {
+            'username':     username,
+            'display_name': user.get('display_name', username),
+            'customers':    user.get('customers', ['ALL']),
+            'role':         user.get('role', 'sre'),
+        }
+    except Exception as e:
+        logger.error(f'Error loading user info for {username}: {e}')
+        return None
+
+
 def get_user_customers(username: str) -> list:
     """Get the list of customers a user can access."""
     from db import get_db

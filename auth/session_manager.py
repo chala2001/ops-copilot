@@ -123,7 +123,8 @@ def logout_user():
     - check_session_timeout() returns (False, message)
     - User clicks the "Sign out" button
 
-    Clears: authenticated flag, user_info, messages, activity timestamps.
+    Clears: authenticated flag, user_info, messages, activity timestamps,
+    and the remember-me cookie so the user is not silently logged back in.
     """
     username = st.session_state.get('user_info', {}).get('username', 'unknown')
 
@@ -135,6 +136,15 @@ def logout_user():
     for key in ['last_activity', 'session_start']:
         if key in st.session_state:
             del st.session_state[key]
+
+    # Strip the session token from the URL so a refresh does not
+    # re-authenticate. Import inside the function to avoid a circular
+    # import at module load time.
+    try:
+        from auth.session_token import clear_session_token
+        clear_session_token()
+    except Exception as e:
+        logger.warning(f"Could not clear session token on logout: {e}")
 
     logger.info(f"User logged out: {username}")
 

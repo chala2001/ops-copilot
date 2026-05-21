@@ -86,6 +86,8 @@ In our app, session_state stores:
 - `st.session_state.last_activity` — timestamp of last page interaction
 - `st.session_state.session_start` — timestamp of login
 
+**Important caveat:** `st.session_state` is per-WebSocket. A **browser refresh starts a fresh WebSocket**, so all of the above keys are wiped. To keep users logged in across refreshes without forcing them to retype the password, we also write a **signed token** into the URL query string (`?s=...`). On the next page load, `auth/session_token.py` reads that token, verifies the HMAC signature, and re-populates `st.session_state`. See `04_authentication.md` and `url_token_session_upgrade.md` for the full design.
+
 ---
 
 ## How app.py Controls Page Flow
@@ -243,7 +245,7 @@ For an internal SRE tool that needs to be built quickly and shown to a team, Str
 
 ## How the HTTPS Transport Works
 
-By default, Streamlit runs on plain HTTP. We configured TLS (HTTPS) by passing certificate files at startup:
+By default, Streamlit runs on plain HTTP. We configured TLS (HTTPS) by passing certificate files at startup. In our Docker setup the certificates are baked into the image at `/app/certs/` and Streamlit is launched with the SSL flags inside the `app` container — you only need to remember the cert paths if you ever run the app outside Docker:
 
 ```bash
 streamlit run app.py \

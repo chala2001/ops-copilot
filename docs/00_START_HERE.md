@@ -18,13 +18,15 @@ It is a **RAG system** — Retrieval-Augmented Generation. That means it searche
 |---|------|---------------------|
 | 1 | [01_architecture.md](01_architecture.md) | The big picture — how all parts connect |
 | 2 | [02_streamlit_explained.md](02_streamlit_explained.md) | What Streamlit is and how the app runs as a server |
-| 3 | [03_rag_pipeline.md](03_rag_pipeline.md) | How RAG works — from your documents to an AI answer |
-| 4 | [04_authentication.md](04_authentication.md) | Login, passwords, bcrypt — full deep dive |
+| 3 | [03_rag_pipeline.md](03_rag_pipeline.md) | How RAG works — embedding, search, rerank, generate |
+| 4 | [04_authentication.md](04_authentication.md) | Login, passwords, bcrypt, URL-token sessions |
 | 5 | [05_security.md](05_security.md) | Rate limits, sessions, audit logs, HTTPS |
 | 6 | [06_code_files.md](06_code_files.md) | Every Python file explained line by line |
 | 7 | [07_dashboards.md](07_dashboards.md) | Each dashboard page and what it shows |
 | 8 | [08_evaluation.md](08_evaluation.md) | How we measure if the AI is any good |
 | 9 | [09_commands.md](09_commands.md) | Every command to run the system |
+| – | [url_token_session_upgrade.md](url_token_session_upgrade.md) | Deep dive on the URL-token persistent-login mechanism and every timer's behavior on refresh |
+| – | [migrateforpostgresql.md](migrateforpostgresql.md) | The JSON → PostgreSQL migration record |
 
 ---
 
@@ -35,10 +37,14 @@ It is a **RAG system** — Retrieval-Augmented Generation. That means it searche
 | UI Framework | Streamlit (Python web framework) |
 | AI Model | Google Gemini Flash (via API) |
 | Vector Database | ChromaDB (runs locally on disk) |
-| Embedding Model | all-MiniLM-L6-v2 (free, runs locally) |
+| Embedding Model | BAAI/bge-base-en-v1.5 (768-dim, free, runs locally) |
+| Reranker | BAAI/bge-reranker-base (two-stage retrieval) |
+| User & Logs Store | PostgreSQL 16 (in a Docker container) |
 | Password Hashing | bcrypt (cost factor 12) |
+| Persistent Login | Signed URL query token (`?s=...`) |
 | Document Types | Markdown, PDF, YAML |
 | Transport Security | HTTPS with TLS certificates |
+| Deployment | Docker Compose (app + postgres + scheduler) |
 
 ---
 
