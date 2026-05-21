@@ -177,9 +177,9 @@ The "Exists" column shows ✅ if the file is still on disk, ❌ if it's been del
 
 ## Page 4: Usage Dashboard (4_Usage_Dashboard.py)
 
-**Who can access:** All authenticated users  
-**File:** [pages/4_Usage_Dashboard.py](../pages/4_Usage_Dashboard.py)  
-**Data source:** `query_log.json` (auto-populated on every query)
+**Who can access:** All authenticated users
+**File:** [pages/4_Usage_Dashboard.py](../pages/4_Usage_Dashboard.py)
+**Data source:** the `query_log` table in PostgreSQL (auto-populated on every query)
 
 ### What It Shows
 
@@ -277,7 +277,7 @@ The admin logged in cannot delete their own account — this prevents accidental
 
 ### Password Hashing on Create
 
-When the admin submits the "Add User" form, the code calls `auth.create_user()` which calls `hash_password()` — the plain-text password is hashed with bcrypt before it ever touches `users.json`. The admin cannot see the password in the stored data.
+When the admin submits the "Add User" form, the code calls `auth.create_user()` which calls `hash_password()` — the plain-text password is hashed with bcrypt before it is INSERTed into the `users` table. The admin cannot see the password in the stored data, even with direct database access.
 
 ### Role Assignment
 

@@ -14,16 +14,20 @@ import os
 from dotenv import load_dotenv
 load_dotenv()   # reads .env file into environment variables
 
-GOOGLE_API_KEY   = os.getenv('GOOGLE_API_KEY')     # Gemini API key
-LLM_MODEL        = 'gemini-flash-latest'           # which Gemini model to use
-EMBEDDING_MODEL  = 'all-MiniLM-L6-v2'             # local embedding model name
-CHUNK_SIZE       = 1000                            # characters per document chunk
-CHUNK_OVERLAP    = 200                             # overlap between adjacent chunks
-CHROMA_PATH      = './chroma_db'                   # folder for vector database
-COLLECTION_NAME  = 'ops_knowledge'                 # name of the ChromaDB collection
-TOP_K_RESULTS    = 5                               # how many chunks to retrieve per query
-MARKDOWN_DIR     = './data/markdown'               # where markdown docs live
-PDF_DIR          = './data/pdf'                    # where PDF docs live
+GOOGLE_API_KEY    = os.getenv('GOOGLE_API_KEY')     # Gemini API key
+LLM_MODEL         = 'gemini-flash-latest'           # which Gemini model to use
+EMBEDDING_MODEL   = 'BAAI/bge-base-en-v1.5'        # 768-dim local embedding model
+CHUNK_SIZE        = 1000                            # characters per document chunk
+CHUNK_OVERLAP     = 200                             # overlap between adjacent chunks
+CHROMA_PATH       = './chroma_db'                   # folder for vector database
+COLLECTION_NAME   = 'ops_knowledge'                 # name of the ChromaDB collection
+TOP_K_RESULTS     = 5                               # final chunks sent to the LLM
+RERANK_ENABLED    = True                            # turn off to skip reranker
+RETRIEVAL_TOP_N   = 20                              # stage-1 vector-search candidates
+RERANKER_MODEL    = 'BAAI/bge-reranker-base'       # cross-encoder for stage 2
+BGE_QUERY_PREFIX  = 'Represent this sentence for searching relevant passages: '
+MARKDOWN_DIR      = './data/markdown'               # where markdown docs live
+PDF_DIR           = './data/pdf'                    # where PDF docs live
 ```
 
 **How other files use it:**
@@ -119,13 +123,14 @@ if prompt:
 
 ```python
 # These run when Python first imports core/rag.py (at app startup)
-client   = genai.Client(api_key=GOOGLE_API_KEY)          # Gemini connection
-embedder = SentenceTransformer(EMBEDDING_MODEL)           # load embedding model (~80MB)
-chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)  # connect to ChromaDB
-collection = chroma_client.get_or_create_collection(...)  # get the chunk collection
+client   = genai.Client(api_key=GOOGLE_API_KEY)                     # Gemini connection
+embedder = SentenceTransformer(EMBEDDING_MODEL)                     # BGE base (~440MB)
+reranker = CrossEncoder(RERANKER_MODEL) if RERANK_ENABLED else None # BGE reranker (~280MB)
+chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)         # connect to ChromaDB
+collection = chroma_client.get_or_create_collection(...)            # get the chunk collection
 ```
 
-Loading these takes a few seconds on startup. After that, they stay in memory — no reload per query.
+First startup is slower because the BGE base and reranker models are downloaded from HuggingFace (~720 MB combined) on first run. After that they are cached inside the container layer — subsequent restarts use the local copy.
 
 ### ask() — Synchronous Version
 
@@ -206,20 +211,22 @@ After ingestion, each file's MD5 hash is stored in `ingestion_state.json`. The I
 ## auth/auth.py — Authentication Logic
 
 **File:** [auth/auth.py](../auth/auth.py)  
-**Purpose:** All user authentication: verify passwords, create users, delete users.  
-**Lines:** 336
+**Purpose:** All user authentication: verify passwords, create users, delete users.
+
+User data lives in the `users` table in PostgreSQL (previously `users.json`). The `db.py` helper at the project root provides a connection pool.
 
 ### Functions
 
 | Function | Purpose |
 |----------|---------|
-| `load_users()` | Read users.json, return the `users` dict |
+| `load_users()` | Read all rows from the `users` table, return as `{username: {...}}` dict |
 | `hash_password(password)` | bcrypt hash a plain-text password → 60-char string |
 | `verify_password(password, stored_hash)` | Check plain-text against bcrypt hash → True/False |
 | `check_login(username, password)` | Full login flow with rate limiting and audit logging |
+| `get_user_info(username)` | Fetch user info without password (used by URL-token restore) |
 | `get_user_customers(username)` | Get list of customers a user can access |
-| `create_user(...)` | Hash password and add to users.json |
-| `delete_user(username)` | Remove from users.json |
+| `create_user(...)` | Hash password and INSERT into `users` table |
+| `delete_user(username)` | DELETE FROM `users` WHERE username = ... |
 
 ### The Most Important Detail
 
@@ -229,6 +236,46 @@ After ingestion, each file's MD5 hash is stored in `ingestion_state.json`. The I
 - The account is rate-limited
 
 This is intentional security design — never tell an attacker which part of their attempt was wrong.
+
+---
+
+## auth/session_token.py — Signed URL-Token Persistent Login
+
+**File:** [auth/session_token.py](../auth/session_token.py)
+**Purpose:** Keep users logged in across browser refreshes by storing an HMAC-signed token in the URL query string.
+
+This module replaced an earlier cookie-based approach (`auth/cookie_auth.py`) that suffered from async-write races, iframe isolation in Firefox Private Browsing, and a visible login-form flash on every refresh. See `docs/url_token_session_upgrade.md` for the full story.
+
+### Functions
+
+| Function | Purpose |
+|----------|---------|
+| `issue_session_token(username)` | Write a signed `?s=<token>` into the URL after a successful login |
+| `try_restore_session()` | On every page load: if `?s=...` is present and valid, populate `st.session_state.authenticated`. Also re-stamps the URL on page navigation. |
+| `clear_session_token()` | Remove `?s=...` from the URL on logout — synchronous, no race |
+| `_verify_token(token)` | Returns `(username, expiry_unix)` if the HMAC is valid and the token has not expired |
+
+The signing key comes from `SESSION_SECRET` in `.env`. Rotating it invalidates all outstanding tokens.
+
+---
+
+## db.py — PostgreSQL Connection Helper
+
+**File:** [db.py](../db.py)
+**Purpose:** Single source of database connections for `auth/`, `monitoring/`, and any other code that needs to talk to PostgreSQL.
+
+Reads `DATABASE_URL` from `.env` (format: `postgresql://USER:PASSWORD@HOST:PORT/DATABASE`), opens connections via `psycopg2`, exposes a `get_db()` context manager that handles commit/rollback.
+
+```python
+from db import get_db
+
+with get_db() as conn:
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM users WHERE username = %s", (username,))
+        row = cur.fetchone()
+```
+
+The PostgreSQL container itself is defined in `docker-compose.yml`. Schema lives in `db/init.sql` and is applied automatically on the **first** container startup (Docker convention for files in `/docker-entrypoint-initdb.d/`).
 
 ---
 
@@ -311,17 +358,16 @@ _failed_login_timestamps: dict = defaultdict(list)
 
 ## monitoring/audit_log.py — Security Event Journal
 
-**File:** [monitoring/audit_log.py](../monitoring/audit_log.py)  
-**Purpose:** Append-only log of all security-relevant events.  
-**Lines:** 174
+**File:** [monitoring/audit_log.py](../monitoring/audit_log.py)
+**Purpose:** Append-only log of all security-relevant events. Now backed by the `audit_log` table in PostgreSQL.
 
 ### Functions
 
 | Function | Purpose |
 |----------|---------|
-| `log_security_event(event_type, username, details, ...)` | Append one record to audit_log.json (atomic write). |
-| `get_failed_logins_last_n_minutes(minutes)` | Return LIST of LOGIN_FAILED events in the last N minutes. |
-| `get_user_audit_trail(username, limit)` | Return last N events for a specific user. |
+| `log_security_event(event_type, username, details, ...)` | INSERT one row into `audit_log` (transactional). |
+| `get_failed_logins_last_n_minutes(minutes)` | SELECT all LOGIN_FAILED rows from the last N minutes. |
+| `get_user_audit_trail(username, limit)` | SELECT last N rows for a specific user. |
 
 ### Event Type Constants (At Module Level)
 
@@ -342,16 +388,15 @@ Using constants (not raw strings) means a typo like `'LOGON_SUCCESS'` would be c
 
 ## monitoring/logger.py — Query Usage Logger
 
-**File:** [monitoring/logger.py](../monitoring/logger.py)  
-**Purpose:** Record every RAG query for analytics and debugging.  
-**Lines:** 120
+**File:** [monitoring/logger.py](../monitoring/logger.py)
+**Purpose:** Record every RAG query for analytics and debugging. Now backed by the `query_log` table in PostgreSQL.
 
 ### Functions
 
 | Function | Purpose |
 |----------|---------|
-| `log_query(username, question, sources, latency_ms, ...)` | Append query record to query_log.json. |
-| `load_log()` | Read all query records for the Usage Dashboard. |
+| `log_query(username, question, sources, latency_ms, ...)` | INSERT one row into `query_log`. |
+| `load_log()` | SELECT all query rows for the Usage Dashboard. |
 
 ### Why Separate from monitoring/audit_log.py?
 
@@ -395,11 +440,11 @@ Mixing them would make both harder to analyze. Keeping them separate follows the
 
 ## scripts/migration.py — SHA-256 to bcrypt Migration Script
 
-**File:** [scripts/migration.py](../scripts/migration.py)  
-**Purpose:** One-time migration script for upgrading passwords from SHA-256 to bcrypt.  
-**Status:** Already run — all users in users.json now have bcrypt hashes.
+**File:** [scripts/migration.py](../scripts/migration.py)
+**Purpose:** One-time migration script for upgrading passwords from SHA-256 to bcrypt.
+**Status:** Already run — every row in the `users` table now stores a bcrypt hash.
 
-This script was used to migrate from the old insecure SHA-256 hashing to the current bcrypt hashing. It is kept for reference but should not need to be run again.
+This script predates the JSON → PostgreSQL migration (see `docs/migrateforpostgresql.md`). It is kept for reference but should not need to be run again. To create new users, use the Admin Panel or call `auth.create_user(...)` directly.
 
 ---
 

@@ -81,7 +81,7 @@ This happens before anyone uses the app. You run `python ingest.py` which:
 
 - Reads all documents from `data/markdown/`, `data/pdf/`, `data/yaml/`
 - Splits long documents into smaller pieces (called "chunks")
-- Converts every chunk into a 384-number "fingerprint" called a vector/embedding
+- Converts every chunk into a 768-number "fingerprint" called a vector/embedding using the BGE base model
 - Stores all these fingerprints in ChromaDB on disk
 
 Think of it like building an index for a library. You do it once, and then searches are fast.
@@ -90,12 +90,13 @@ Think of it like building an index for a library. You do it once, and then searc
 
 When a user logs in and asks a question:
 
-1. The question is converted to a vector (same method as the documents)
-2. ChromaDB finds the 5 chunks whose vectors are most similar to the question vector
-3. Those 5 chunks are sent to Gemini as "context"
-4. Gemini writes an answer based only on that context
-5. The answer streams back word-by-word to the user
-6. The question, answer, and latency are logged
+1. The question is converted to a vector (same BGE model, with the BGE query prefix)
+2. ChromaDB finds the **top 20** chunks whose vectors are most similar to the question vector (wide net, fast)
+3. A cross-encoder reranker (`BAAI/bge-reranker-base`) re-scores those 20 chunks by reading each `(question, chunk)` pair directly, and keeps the top 5
+4. Those 5 reranked chunks are sent to Gemini as "context"
+5. Gemini writes an answer based only on that context
+6. The answer streams back word-by-word to the user
+7. The question, answer, and latency are logged to the `query_log` table in PostgreSQL
 
 ---
 
@@ -116,14 +117,15 @@ ops-copilot/
 │   └── ingest.py            ← Document ingestion pipeline
 │
 ├── auth/                    ← Authentication and session management
-│   ├── auth.py              ← Login logic + user management functions
+│   ├── auth.py              ← Login logic + user management (reads from PostgreSQL)
 │   ├── auth_guard.py        ← Reusable page protection for dashboards
-│   ├── session_manager.py   ← Session timeout tracking
+│   ├── session_manager.py   ← Session timeout tracking (60-min idle, 8-hour max)
+│   ├── session_token.py     ← Signed URL-token persistent login (replaces cookies)
 │   └── rate_limiter.py      ← API and login throttling
 │
 ├── monitoring/              ← Logging and evaluation
-│   ├── audit_log.py         ← Security event logging
-│   ├── logger.py            ← Query/usage logging
+│   ├── audit_log.py         ← Security event logging (writes to audit_log table in PostgreSQL)
+│   ├── logger.py            ← Query/usage logging (writes to query_log table in PostgreSQL)
 │   └── evaluate.py          ← Measures AI answer quality
 │
 ├── pages/
@@ -204,13 +206,17 @@ app.py receives the text via st.chat_input()
         │
         ├─► rag.ask_stream(question, customer_scope=None)
         │       │
-        │       ├─► embedder.encode(question)
-        │       │       └── converts question to a 384-number vector
+        │       ├─► embedder.encode("Represent this sentence for searching relevant passages: " + question)
+        │       │       └── converts question to a 768-number vector (BGE base)
         │       │
-        │       ├─► collection.query(question_vector, n_results=5)
-        │       │       └── ChromaDB finds 5 most similar document chunks
+        │       ├─► collection.query(question_vector, n_results=20)
+        │       │       └── ChromaDB returns top 20 candidate chunks (wide net)
         │       │
-        │       ├─► builds "context" string from those 5 chunks
+        │       ├─► reranker.predict([(question, chunk), ...])
+        │       │       └── BGE cross-encoder re-scores all 20 pairs,
+        │       │           top 5 are kept for the LLM
+        │       │
+        │       ├─► builds "context" string from those 5 reranked chunks
         │       │
         │       └─► client.models.generate_content_stream(prompt_with_context)
         │               └── Gemini streams answer tokens back
@@ -218,7 +224,7 @@ app.py receives the text via st.chat_input()
         │                   the user sees text appearing word by word
         │
         ├─► logger.log_query(username, question, answer, sources, latency_ms)
-        │       └── appends to query_log.json
+        │       └── inserts row into PostgreSQL `query_log` table
         │
         └─► answer + sources are saved to st.session_state.messages
                 └── next rerun shows them in chat history

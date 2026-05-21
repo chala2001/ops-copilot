@@ -81,11 +81,11 @@ Even though ChromaDB runs as files on disk inside the `app` container, that is f
 
 So we **do NOT need** to switch to Pinecone, Azure AI Search, or pgvector. The existing ChromaDB setup is good enough.
 
-### Why our embedding model is OK
+### Why our embedding setup is OK
 
-`all-MiniLM-L6-v2` runs locally inside the `app` container, uses no API calls, and is fast on CPU. For 40-50 internal users searching English WSO2 docs, this is the right choice. We only need to upgrade if:
-- Docs contain non-English content (then upgrade is required), or
-- Retrieval quality complaints come in (then consider `bge-small-en-v1.5`).
+`BAAI/bge-base-en-v1.5` (768-dim) and the `BAAI/bge-reranker-base` cross-encoder both run locally inside the `app` container — no API calls. For 40-50 internal users searching English WSO2 docs, the two-stage retrieve-then-rerank pipeline is the right choice. We only need to revisit if:
+- Docs contain non-English content (consider a multilingual BGE variant), or
+- The CPU cost of the reranker becomes a bottleneck at concurrent-user peaks (drop to `RERANK_ENABLED = False` in `core/config.py`, accepting some accuracy loss).
 
 ---
 
@@ -224,7 +224,7 @@ If we want to look at logs in one place, send container logs to **Azure Log Anal
 |---|---|---|---|
 | Streamlit app | One container | **Keep as-is** | One instance handles 40-50 concurrent fine |
 | ChromaDB | Embedded mode, files in volume | **Keep as-is** | Small scale, one writer, one reader |
-| Embedding model | `all-MiniLM-L6-v2` (local) | **Keep as-is** | Free, fast, sufficient for English internal docs |
+| Embedding + reranker | `BAAI/bge-base-en-v1.5` + `BAAI/bge-reranker-base` (local) | **Keep as-is** | Free, runs locally, strong English retrieval quality |
 | LLM | Gemini Flash | **Keep as-is** | Cheap, fast, accurate enough |
 | Postgres | Container on same VM | **Optional upgrade** to Azure Postgres Flexible Server | Better backups, less ops work |
 | Scheduler | APScheduler in container | **Keep as-is** | Simple and works |

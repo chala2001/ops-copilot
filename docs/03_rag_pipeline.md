@@ -77,23 +77,27 @@ Document (5000 chars):
 
 ### Step 1.4 — Convert Chunks to Vectors (Embeddings)
 
-This is the core of the system. We use a model called `all-MiniLM-L6-v2` to convert every chunk of text into a list of 384 numbers called a **vector** or **embedding**.
+This is the core of the system. We use the model `BAAI/bge-base-en-v1.5` to convert every chunk of text into a list of 768 numbers called a **vector** or **embedding**.
 
 **Analogy:** Think of the embedding as giving each text chunk GPS coordinates. Similar texts (about the same topic) get coordinates that are close together. Unrelated texts get coordinates that are far apart.
 
 ```
 "CustomerX runs WSO2 API Manager 4.2.0"
-  → [0.12, -0.34, 0.89, 0.01, -0.45, ... ] (384 numbers)
+  → [0.12, -0.34, 0.89, 0.01, -0.45, ... ] (768 numbers)
 
 "CustomerY has a known issue with pods"
-  → [0.08, 0.67, -0.23, 0.91, 0.12, ... ] (384 numbers)
+  → [0.08, 0.67, -0.23, 0.91, 0.12, ... ] (768 numbers)
 ```
+
+**Why BGE instead of MiniLM?** We previously used `all-MiniLM-L6-v2` (384 dimensions). BGE-base outscores it by a wide margin on retrieval benchmarks (~63 vs ~49 on MTEB retrieval). The model is larger (~440MB vs ~80MB) and slower, but for our internal use case the quality gain matters more than the speed difference.
 
 The model runs entirely on your machine — no internet, no API cost. It runs once during ingestion and is loaded again during query time.
 
+**Important:** documents are embedded with **no prefix**, but queries get a special BGE prefix (see Step 2.1). Don't change this — BGE was trained that way.
+
 ### Step 1.5 — Store in ChromaDB
 
-ChromaDB is a vector database. Think of it as a special database that can efficiently store and search through millions of these 384-number vectors.
+ChromaDB is a vector database. Think of it as a special database that can efficiently store and search through millions of these 768-number vectors.
 
 ```python
 collection.upsert(
@@ -114,30 +118,34 @@ This happens every time a user asks a question. The function `ask_stream()` in c
 
 ### Step 2.1 — Embed the Question
 
-The user's question is converted to a vector using the same embedding model:
+The user's question is converted to a vector using the same BGE model, **with the BGE query prefix prepended**:
 
 ```python
-question_embedding = embedder.encode(question).tolist()
+question_embedding = embedder.encode(
+    "Represent this sentence for searching relevant passages: " + question
+).tolist()
 # question = "What version is CustomerX running?"
-# → [0.11, -0.31, 0.87, 0.03, ...] (384 numbers)
+# → [0.11, -0.31, 0.87, 0.03, ...] (768 numbers)
 ```
+
+The prefix is part of how BGE was trained: documents are embedded without a prefix, queries get this specific instruction. Skipping the prefix still works but gives noticeably worse retrieval quality.
 
 This is the "GPS coordinate" of the user's question.
 
-### Step 2.2 — Search ChromaDB
+### Step 2.2 — Vector Search (Stage 1 of Retrieval)
 
-ChromaDB finds the 5 chunks whose vectors are closest to the question vector:
+ChromaDB finds the **top 20** chunks whose vectors are closest to the question vector — this is the wide-net first pass:
 
 ```python
 results = collection.query(
     query_embeddings=[question_embedding],
-    n_results=5,                                   # return top 5 chunks
+    n_results=20,                                  # RETRIEVAL_TOP_N — wide net
     where={'customer': {'$in': ['ALL']}},          # filter by customer (optional)
     include=['documents', 'metadatas', 'distances']
 )
 ```
 
-"Closest" means mathematically most similar in 384-dimensional space. This is called **cosine similarity**. Documents about CustomerX versions will be close to a question about CustomerX versions, because both texts use the same concepts and terminology.
+"Closest" means mathematically most similar in 768-dimensional space. This is called **cosine similarity**. The vector search is fast (~10ms for 20 results) but only approximately measures relevance — that's why we follow it with a reranker.
 
 The `distances` value tells us how similar each result is. We convert it to a percentage:
 ```
@@ -145,7 +153,21 @@ similarity = round(1 - distance, 3)
 # distance of 0.1 → similarity = 0.9 = 90% match
 ```
 
-### Step 2.3 — Build the Context String
+### Step 2.3 — Rerank (Stage 2 of Retrieval)
+
+The top 20 candidates from stage 1 are passed to a **cross-encoder reranker** (`BAAI/bge-reranker-base`). Unlike the embedding model which encodes question and chunk separately, the cross-encoder reads `(question, chunk)` as a single input and outputs a relevance score directly. This is much more accurate but slower (~50–200ms for 20 pairs).
+
+```python
+pairs = [(question, chunk) for chunk in candidates]
+scores = reranker.predict(pairs)
+top_5 = sorted(zip(scores, candidates), reverse=True)[:5]
+```
+
+Only the **top 5 reranked chunks** go to the LLM. We typically see a meaningful accuracy bump compared to using the raw vector-search top 5 alone.
+
+The reranker can be disabled via `RERANK_ENABLED = False` in `core/config.py`, in which case the vector search returns 5 chunks directly with no second pass.
+
+### Step 2.4 — Build the Context String
 
 The 5 retrieved chunks are assembled into a "context" string with source labels:
 
@@ -166,7 +188,7 @@ The production cluster uses Standard_D4s_v3 nodes...
 
 This context will be given to Gemini in the next step.
 
-### Step 2.4 — Build the Prompt
+### Step 2.5 — Build the Prompt
 
 We combine a system prompt (instructions for Gemini) with the context and the user's question:
 
@@ -187,7 +209,7 @@ Answer based only on the context above:
 
 The key instruction is "Answer ONLY from the provided context." This prevents Gemini from making things up or pulling in information that's not in your documents.
 
-### Step 2.5 — Stream Gemini's Answer
+### Step 2.6 — Stream Gemini's Answer
 
 We call Gemini's streaming API:
 
@@ -204,7 +226,7 @@ for chunk in response:     # Gemini sends tokens as they're generated
 
 The user sees the answer appearing word by word, like watching someone type in real time.
 
-### Step 2.6 — Yield Sources and Log
+### Step 2.7 — Yield Sources and Log
 
 After all text is yielded, we yield the sources list so app.py can display the source citations:
 
@@ -214,7 +236,7 @@ yield sources  # [{source: '...', customer: '...', similarity: 0.92}, ...]
 
 Back in app.py, after streaming finishes:
 - The answer and sources are saved to `st.session_state.messages` (chat history)
-- `logger.log_query()` records everything to `query_log.json`
+- `logger.log_query()` inserts a row into the PostgreSQL `query_log` table
 
 ---
 
@@ -244,8 +266,12 @@ In `core/config.py`:
 |---------|-------|--------|
 | `CHUNK_SIZE` | 1000 chars | Bigger = more context per chunk, but less precise matching |
 | `CHUNK_OVERLAP` | 200 chars | More = less information loss at boundaries |
-| `TOP_K_RESULTS` | 5 | More chunks = more context for Gemini, but more tokens = more cost |
-| `EMBEDDING_MODEL` | all-MiniLM-L6-v2 | The model that creates vectors |
+| `RETRIEVAL_TOP_N` | 20 | Stage-1 candidates from vector search before reranking |
+| `TOP_K_RESULTS` | 5 | Final chunks (after reranking) sent to Gemini |
+| `RERANK_ENABLED` | True | Set False to skip stage 2 and use raw vector search |
+| `RERANKER_MODEL` | BAAI/bge-reranker-base | Cross-encoder used in stage 2 |
+| `EMBEDDING_MODEL` | BAAI/bge-base-en-v1.5 | The model that creates 768-dim vectors |
+| `BGE_QUERY_PREFIX` | `Represent this sentence...` | Prepended to queries only, not documents |
 | `LLM_MODEL` | gemini-flash-latest | The model that writes the answer |
 
 ---

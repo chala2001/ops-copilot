@@ -6,10 +6,25 @@
 
 ## First Time Setup
 
+> **Note:** the recommended way to run this app is via Docker Compose — it brings up the Streamlit app, the PostgreSQL database, and the background scheduler together. The "local venv" instructions below are kept for development convenience.
+
+### Quickstart with Docker (recommended)
+
+```bash
+docker compose up -d --build         # build images + start everything
+docker compose logs -f app           # follow app startup logs
+
+# First time only: create your admin account
+docker exec -it ops-copilot-app python -c \
+  'from auth.auth import create_user; create_user("admin", "ChangeMe123!", "Administrator", role="admin")'
+```
+
+Then open https://localhost:8501 and log in. To stop: `docker compose down`. To stop *and wipe user data*: `docker compose down -v` (this deletes the postgres volume — be careful).
+
 ### 1. Clone and enter the project
 
 ```bash
-cd ops-copilot_gemini
+cd ops-copilot
 ```
 
 ### 2. Create a virtual environment
@@ -52,19 +67,27 @@ pip install -r requirements.txt
 | `langchain` | Document loading utilities |
 | `ragas` | AI evaluation framework |
 
-### 5. Set up your API key
+### 5. Set up your API key and session secret
 
 ```bash
-# The .env file is already there — just verify it has your key:
+# The .env file is already there — just verify it has your keys:
 cat .env
 ```
 
-It should contain:
+It should contain at minimum:
 ```
 GOOGLE_API_KEY=AIzaSy...your key here...
+DATABASE_URL=postgresql://ops_user:ops_password@postgres:5432/ops_copilot
+SESSION_SECRET=<64 hex characters — used to sign persistent-login URL tokens>
 ```
 
-If the key is wrong, Gemini calls will fail with an authentication error.
+If `GOOGLE_API_KEY` is wrong, Gemini calls fail with an auth error. If `SESSION_SECRET` is missing, the app generates an ephemeral one at startup and prints a warning — users will be logged out on every container restart. Generate one once with:
+
+```bash
+python3 -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Then paste it into `.env` as `SESSION_SECRET=...`.
 
 ---
 
@@ -79,7 +102,7 @@ python ingest.py
 **What this does:**
 1. Reads all files from `data/markdown/`, `data/pdf/`, `data/yaml/`
 2. Splits them into chunks of 1000 characters
-3. Converts each chunk to a 384-number vector (embedding)
+3. Converts each chunk to a 768-number vector (embedding) using BGE base
 4. Stores everything in `chroma_db/`
 5. Saves a hash of each file to `ingestion_state.json`
 
@@ -193,39 +216,39 @@ python evaluate.py
 
 These are alternative to using the Admin Panel web UI.
 
-### Add a new user (hash a new password)
+### Add a new user
 
-```python
-python3 -c "
-from auth import create_user
+```bash
+docker exec -it ops-copilot-app python3 -c '
+from auth.auth import create_user
 success = create_user(
-    username='newuser',
-    password='SecurePass123!',
-    display_name='New User (SRE)',
-    role='sre'
+    username="newuser",
+    password="SecurePass123!",
+    display_name="New User (SRE)",
+    role="sre",
 )
-print('Created:', success)
-"
+print("Created:", success)
+'
 ```
+
+Note the single quotes around the python `-c` block — required when your password contains `!`, which bash interprets as history expansion inside double quotes.
 
 ### Hash a password manually
 
-```python
-python3 -c "
-from auth import hash_password
-h = hash_password('MyPassword123')
-print(h)
-"
+```bash
+docker exec -it ops-copilot-app python3 -c '
+from auth.auth import hash_password
+print(hash_password("MyPassword123"))
+'
 ```
 
 ### Verify a password against a stored hash
 
-```python
-python3 -c "
-from auth import verify_password
-result = verify_password('MyPassword123', '\$2b\$12\$...')
-print('Match:', result)
-"
+```bash
+docker exec -it ops-copilot-app python3 -c '
+from auth.auth import verify_password
+print("Match:", verify_password("MyPassword123", "$2b$12$..."))
+'
 ```
 
 ---
@@ -256,35 +279,35 @@ This runs `test_rag()` at the bottom of core/rag.py, which asks a hardcoded test
 
 ## Checking Logs
 
+All logs now live in PostgreSQL — use `psql` inside the container, or the helper functions in Python.
+
+### Open a psql shell
+
+```bash
+docker exec -it ops-copilot-postgres psql -U ops_user -d ops_copilot
+```
+
+Inside psql: `\dt` lists tables, `\q` quits.
+
 ### View recent queries
 
 ```bash
-python3 -c "
-import json
-with open('query_log.json') as f:
-    log = json.load(f)
-for q in log['queries'][-5:]:  # last 5 queries
-    print(q['timestamp'], q['username'], q['question'][:50])
-"
+docker exec -it ops-copilot-postgres psql -U ops_user -d ops_copilot -c \
+  "SELECT timestamp, username, LEFT(question, 50) FROM query_log ORDER BY timestamp DESC LIMIT 5;"
 ```
 
 ### View recent security events
 
 ```bash
-python3 -c "
-import json
-with open('audit_log.json') as f:
-    log = json.load(f)
-for e in log['events'][-10:]:  # last 10 events
-    print(e['timestamp'], e['event_type'], e['username'])
-"
+docker exec -it ops-copilot-postgres psql -U ops_user -d ops_copilot -c \
+  "SELECT timestamp, event_type, username FROM audit_log ORDER BY timestamp DESC LIMIT 10;"
 ```
 
-### Check for failed login attempts
+### Check for failed login attempts (via Python helper)
 
 ```bash
-python3 -c "
-from audit_log import get_failed_logins_last_n_minutes
+docker exec -it ops-copilot-app python3 -c "
+from monitoring.audit_log import get_failed_logins_last_n_minutes
 failures = get_failed_logins_last_n_minutes(60)
 print(f'Failed logins in last 60 min: {len(failures)}')
 for f in failures:
@@ -294,23 +317,29 @@ for f in failures:
 
 ---
 
-## Docker (Optional)
-
-If a `Dockerfile` and `docker-compose.yml` are configured:
+## Docker (Standard Workflow)
 
 ```bash
-# Build the image
-docker build -t sre-ops-copilot .
+# Build + start everything (app + postgres + scheduler)
+docker compose up -d --build
 
-# Run with docker-compose
-docker-compose up -d
+# View live logs for one service
+docker compose logs -f app
 
-# View logs
-docker-compose logs -f
+# Re-ingest documents inside the app container
+docker exec -it ops-copilot-app python ingest.py
 
-# Stop
-docker-compose down
+# Re-ingest from scratch (wipes ChromaDB first)
+rm -rf chroma_db/* && docker exec -it ops-copilot-app python ingest.py
+
+# Stop everything (data preserved)
+docker compose down
+
+# Stop and DELETE the postgres volume (also wipes all users, audit log, query log)
+docker compose down -v
 ```
+
+Tip: if you change Python code, run `docker compose up -d --build` to bake the changes into the image. Files under `data/`, `chroma_db/` and the JSON state file are bind-mounted, so edits to those don't need a rebuild.
 
 ---
 
@@ -318,11 +347,12 @@ docker-compose down
 
 | Situation | Command |
 |-----------|---------|
-| First time setup | `source venv/bin/activate && pip install -r requirements.txt` |
-| Added new documents | `python ingest.py` |
-| Modified existing docs | `python ingest.py --clear` |
-| Start the app (with HTTPS) | `streamlit run app.py --server.sslCertFile=certs/cert.pem --server.sslKeyFile=certs/key.pem` |
-| Check AI quality | `python evaluate.py` |
+| First time setup | `docker compose up -d --build` |
+| Create first admin user | `docker exec -it ops-copilot-app python -c 'from auth.auth import create_user; create_user("admin", "Pass123!", "Admin", role="admin")'` |
+| Added new documents | `docker exec -it ops-copilot-app python ingest.py` |
+| Modified existing docs | `rm -rf chroma_db/* && docker exec -it ops-copilot-app python ingest.py` |
+| Restart after code change | `docker compose up -d --build` |
+| Check AI quality | `docker exec -it ops-copilot-app python evaluate.py` |
 | Add a new team member | Use Admin Panel at `/Admin_Panel` |
-| Check for attacks | Read `audit_log.json` or use Admin Panel |
+| Check for attacks | Query the `audit_log` table or use Admin Panel |
 | Check usage stats | Open Usage Dashboard in the app |

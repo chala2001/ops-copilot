@@ -15,7 +15,8 @@ CONFLUENCE_SPACE_KEY = os.getenv('CONFLUENCE_SPACE_KEY', 'SRE')
 
 # ── Model Settings ───────────────────────────────────────
 # The Gemini model to use for answering questions
-LLM_MODEL = 'gemini-flash-latest'
+# LLM_MODEL = 'gemini-flash-latest'
+LLM_MODEL = "google/gemini-3.5-flash"
 
 # The local embedding model that converts text to vectors
 # This runs on your computer, no API key needed, completely free

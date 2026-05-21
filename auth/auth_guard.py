@@ -5,6 +5,7 @@
 import streamlit as st
 from auth.auth import check_login
 from auth.session_manager import check_session_timeout, init_session_tracking, logout_user
+from auth.session_token import try_restore_session
 
 
 def require_authentication():
@@ -17,6 +18,10 @@ def require_authentication():
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
         st.session_state.user_info = None
+
+    # Restore session from URL token if the browser was just refreshed —
+    # otherwise users land on dashboards as "not logged in" after F5.
+    try_restore_session()
 
     if not st.session_state.authenticated:
         st.warning('🔒 Access Denied — Authentication Required')

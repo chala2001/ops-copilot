@@ -16,11 +16,18 @@ st.set_page_config(
 )
 
 from auth.auth import check_login, get_user_customers as auth_get_customers
+from auth.session_token import try_restore_session, issue_session_token
 
 # ── Session State ─────────────────────────────────────────
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.user_info = None
+
+# ── Remember-me: restore from URL token if browser was refreshed ─
+# st.query_params is read synchronously on the very first line of the
+# script, so a user with a valid token never sees the login form flash
+# on refresh.
+try_restore_session()
 
 # ── Login Gate ────────────────────────────────────────────
 if not st.session_state.authenticated:
@@ -44,6 +51,7 @@ if not st.session_state.authenticated:
                     st.session_state.authenticated = True
                     st.session_state.user_info = user_info
                     init_session_tracking()
+                    issue_session_token(user_info['username'])
                     st.rerun()
                 else:
                     st.error('Incorrect username or password.')
